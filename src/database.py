@@ -11,27 +11,12 @@ class Database:
             password=password,
             dbname=dbname
         )
-        self._create_tables()
-
-    def _create_tables(self):
-        with self.conn.cursor() as cur:
-            cur.execute('''
-            CREATE TABLE IF NOT EXISTS eventos (
-                id SERIAL PRIMARY KEY,
-                timestamp TIMESTAMP,
-                grupo INTEGER,
-                ssi INTEGER,
-                texto TEXT,
-                ruta_audio TEXT
-            )
-            ''')
-            self.conn.commit()
 
     def guardar_evento(self, grupo, ssi, texto, ruta_audio):
         with self.conn.cursor() as cur:
             cur.execute('''
-            INSERT INTO eventos (timestamp, grupo, ssi, texto, ruta_audio)
-            VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO eventos (timestamp, grupo, ssi, texto, ruta_audio)
+                VALUES (%s, %s, %s, %s, %s)
             ''', (datetime.now(), grupo, ssi, texto, ruta_audio))
             self.conn.commit()
 
