@@ -28,7 +28,7 @@ audio_buffer = AudioBuffer(
     output_dir=cfg["audio"]["output_dir"]
 )
 stt = STTProcessor(model_name=cfg["stt"]["model"], language=cfg["stt"]["language"])
-kf = KeywordFilter(cfg["keywords"])
+kf = KeywordFilter("config/keywords.yaml")
 
 # ---------------------------
 # Función para manejar evento de llamada

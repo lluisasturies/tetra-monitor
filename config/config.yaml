@@ -9,10 +9,6 @@ stt:
   model: "base"  # tiny/base/medium
   language: "es"
 
-keywords:
-  - "intento de intrusión"
-  - "falla cámara"
-
 pei:
   port: "/dev/ttyUSB0"
   baudrate: 9600
