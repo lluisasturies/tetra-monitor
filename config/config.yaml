@@ -1,0 +1,34 @@
+audio:
+  device_index: 1
+  sample_rate: 16000
+  channels: 1
+  prebuffer_seconds: 5
+  output_dir: "./data/audio"
+
+stt:
+  model: "base"  # tiny/base/medium
+  language: "es"
+
+keywords:
+  - "intento de intrusión"
+  - "falla cámara"
+
+pei:
+  port: "/dev/ttyUSB0"
+  baudrate: 9600
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "piuser"
+  password: "pipassword"
+  dbname: "tetra"
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  jwt_secret: "CAMBIA_ESTO"
+
+telegram:
+  token: "TU_TOKEN"
+  chat_id: "TU_CHAT_ID"
