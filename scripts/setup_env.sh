@@ -19,7 +19,10 @@ sudo -u postgres psql -c "CREATE DATABASE tetra OWNER piuser;"
 echo "Creando entorno virtual..."
 python3 -m venv ~/tetra-monitor/venv
 
-# Instalar dependencias Python
+# Activar el entorno virtual
+source ~/tetra-monitor/venv/bin/activate
+
+# Actualizar pip y instalar dependencias dentro del venv
 echo "Instalando dependencias de Python..."
 pip install --upgrade pip
 pip install fastapi uvicorn psycopg2-binary sounddevice soundfile pyyaml requests whisper
