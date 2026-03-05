@@ -35,30 +35,28 @@ stt = STTProcessor(model_name=cfg["stt"]["model"], language=cfg["stt"]["language
 keywords_path = os.path.join(base_dir, "../config/keywords.yaml")
 kf = KeywordFilter(keywords_path)
 
-print()
-print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀█░░░░░█▄█░█▀█░█▀█░▀█▀░▀█▀░█▀█░█▀▄")
-print("░░█░░█▀▀░░█░░█▀▄░█▀█░▄▄▄░█░█░█░█░█░█░░█░░░█░░█░█░█▀▄")
-print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀░▀░▀▀▀░░▀░░▀▀▀░▀░▀")
-print("2026 © Lluis de la Rubia / LluisAsturies")
-
 # ---------------------------
 # PEI Radio Controller genérico
 # ---------------------------
 class RadioPEI:
     def __init__(self, port="/dev/ttyUSB0"):
         self.port = port
-        print(f"[INFO] RadioPEI inicializada en {port}")
+        print()
+        print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀█░░░░░█▄█░█▀█░█▀█░▀█▀░▀█▀░█▀█░█▀▄")
+        print("░░█░░█▀▀░░█░░█▀▄░█▀█░▄▄▄░█░█░█░█░█░█░░█░░░█░░█░█░█▀▄")
+        print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀░▀░▀▀▀░░▀░░▀▀▀░▀░▀")
+        print("2026 © Lluis de la Rubia / LluisAsturies")
+        print("[INFO] Iniciando TETRA Monitor")
 
     def set_active_gssi(self, gssi: str):
-        print(f"[PEI] Cambiando GSSI activo a {gssi}")
+        print(f"[PEI] Afiliando a GSSI: {gssi}")
 
     def set_scan_list(self, scan_list: str):
-        print(f"[PEI] Actualizando Scan List: {scan_list}")
+        print(f"[PEI] Cambiando a Scan List: {scan_list}")
 
 radio = RadioPEI(port=cfg["pei"]["port"])
 
 def aplicar_config_radio():
-    """Función pública para que api.py aplique cambios a la radio"""
     radio.set_active_gssi(scan_config.gssi)
     radio.set_scan_list(scan_config.scan_list)
 
@@ -95,6 +93,8 @@ def escuchar_pei():
     port = cfg["pei"]["port"]
     baudrate = cfg["pei"]["baudrate"]
 
+    print(f"[INFO] Inicializando RadioPEI en {port}")
+
     try:
         ser = serial.Serial(port, baudrate, timeout=1)
         print(f"[INFO] Conectado a PEI en {port} a {baudrate} bps")
@@ -127,6 +127,6 @@ def escuchar_pei():
 # Inicio principal
 # ---------------------------
 if __name__ == "__main__":
-    print("[INFO] Iniciando TETRA Monitor producción")
+    print("[INFO] Iniciando TETRA Monitor")
     aplicar_config_radio()
     escuchar_pei()
