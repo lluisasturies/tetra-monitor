@@ -32,7 +32,8 @@ audio_buffer = AudioBuffer(
     output_dir=cfg["audio"]["output_dir"]
 )
 stt = STTProcessor(model_name=cfg["stt"]["model"], language=cfg["stt"]["language"])
-kf = KeywordFilter("config/keywords.yaml")
+keywords_path = os.path.join(base_dir, "../config/keywords.yaml")
+kf = KeywordFilter(keywords_path)
 
 # ---------------------------
 # PEI Radio Controller genérico
