@@ -1,9 +1,12 @@
 #!/bin/bash
-# Arranque manual del proyecto
 
-cd src
+# Ruta absoluta del entorno virtual
+VENV_PATH=~/tetra-monitor/venv
+
+# Activar el entorno
+source $VENV_PATH/bin/activate
 
 echo "Iniciando demonio PEI y grabación selectiva..."
-python3 pei_daemon.py &
+python3 src/pei_daemon.py &
 PID=$!
 echo "PID: $PID"

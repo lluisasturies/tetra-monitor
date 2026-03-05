@@ -17,7 +17,7 @@ sudo -u postgres psql -c "CREATE DATABASE tetra OWNER piuser;"
 
 # Crear entorno virtual
 echo "Creando entorno virtual..."
-python3 -m venv ../venv
+python3 -m venv ~/tetra-monitor/venv
 
 # Instalar dependencias Python
 echo "Instalando dependencias de Python..."
