@@ -7,7 +7,7 @@ SCAN_CONFIG_PATH = Path("config/scan.yaml")
 class ScanConfig:
     def __init__(self):
         self.gssi: str = ""
-        self.scan_list: List[int] = []
+        self.scan_list: str = ""
         self._load()
 
     def _load(self):
@@ -15,7 +15,7 @@ class ScanConfig:
             with open(SCAN_CONFIG_PATH, "r") as f:
                 data = yaml.safe_load(f) or {}
             self.gssi = data.get("gssi", "")
-            self.scan_list = data.get("scan_list", [])
+            self.scan_list = data.get("scan_list", "")
         else:
             self.gssi = ""
             self.scan_list = []
@@ -31,7 +31,7 @@ class ScanConfig:
         self.gssi = gssi
         self.save()
 
-    def update_scan_list(self, scan_list: List[int]):
+    def update_scan_list(self, scan_list: str = ""):
         self.scan_list = scan_list
         self.save()
 

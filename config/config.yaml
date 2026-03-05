@@ -1,3 +1,7 @@
+pei:
+  port: "/dev/ttyUSB0"
+  baudrate: 9600
+
 audio:
   device_index: 1
   sample_rate: 16000
@@ -8,10 +12,6 @@ audio:
 stt:
   model: "base"  # tiny/base/medium
   language: "es"
-
-pei:
-  port: "/dev/ttyUSB0"
-  baudrate: 9600
 
 database:
   host: "localhost"

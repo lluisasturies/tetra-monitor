@@ -1,4 +1,2 @@
-gssi: "default_gssi_value"
-scan_list:
-  - "network1"
-  - "network2"
+gssi: "36001"
+scan_list: "ListaScan1"

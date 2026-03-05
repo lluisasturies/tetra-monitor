@@ -10,8 +10,7 @@ from stt_processor import STTProcessor
 from keyword_filter import KeywordFilter
 from telegram_bot import TelegramBot
 from database import Database
-
-from scan_config import scan_config  # Configuración dinámica
+from scan_config import ScanConfig
 
 # ---------------------------
 # Cargar configuración principal
@@ -42,7 +41,7 @@ class RadioPEI:
     def set_active_gssi(self, gssi: str):
         print(f"[PEI] Cambiando GSSI activo a {gssi}")
 
-    def set_scan_list(self, scan_list: List[int]):
+    def set_scan_list(self, scan_list: str):
         print(f"[PEI] Actualizando Scan List: {scan_list}")
 
 radio = RadioPEI(port=cfg["pei"]["port"])
