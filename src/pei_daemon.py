@@ -39,8 +39,7 @@ kf = KeywordFilter(keywords_path)
 # PEI Radio Controller genérico
 # ---------------------------
 class RadioPEI:
-    def __init__(self, port="/dev/ttyUSB0"):
-        self.port = port
+    def __init__(self):
         print()
         print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀█░░░░░█▄█░█▀█░█▀█░▀█▀░▀█▀░█▀█░█▀▄")
         print("░░█░░█▀▀░░█░░█▀▄░█▀█░▄▄▄░█░█░█░█░█░█░░█░░░█░░█░█░█▀▄")
@@ -127,6 +126,5 @@ def escuchar_pei():
 # Inicio principal
 # ---------------------------
 if __name__ == "__main__":
-    print("[INFO] Iniciando TETRA Monitor")
     aplicar_config_radio()
     escuchar_pei()
