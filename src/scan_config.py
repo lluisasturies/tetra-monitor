@@ -18,7 +18,7 @@ class ScanConfig:
             self.scan_list = data.get("scan_list", "")
         else:
             self.gssi = ""
-            self.scan_list = []
+            self.scan_list = ""
 
     def save(self):
         with open(SCAN_CONFIG_PATH, "w") as f:

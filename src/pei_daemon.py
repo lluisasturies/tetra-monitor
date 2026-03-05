@@ -10,12 +10,15 @@ from stt_processor import STTProcessor
 from keyword_filter import KeywordFilter
 from telegram_bot import TelegramBot
 from database import Database
-from scan_config import ScanConfig
+from scan_config import scan_config
 
 # ---------------------------
 # Cargar configuración principal
 # ---------------------------
-with open("config/config.yaml", "r") as f:
+base_dir = os.path.dirname(os.path.abspath(__file__))
+config_path = os.path.join(base_dir, "../config/config.yaml")
+
+with open(config_path, "r") as f:
     cfg = yaml.safe_load(f)
 
 db = Database(**cfg["database"])
