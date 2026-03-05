@@ -12,6 +12,7 @@ from keyword_filter import KeywordFilter
 from telegram_bot import TelegramBot
 from database import Database
 from scan_config import scan_config
+from pei_motorola import MotorolaPEI
 
 # ---------------------------
 # Cargar configuración principal
@@ -35,11 +36,8 @@ stt = STTProcessor(model_name=cfg["stt"]["model"], language=cfg["stt"]["language
 keywords_path = os.path.join(base_dir, "../config/keywords.yaml")
 kf = KeywordFilter(keywords_path)
 
-# ---------------------------
-# PEI Radio Controller genérico
-# ---------------------------
 class RadioPEI:
-    def __init__(self, port: str):
+    def __init__(self):
         print()
         print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀█░░░░░█▄█░█▀█░█▀█░▀█▀░▀█▀░█▀█░█▀▄")
         print("░░█░░█▀▀░░█░░█▀▄░█▀█░▄▄▄░█░█░█░█░█░█░░█░░░█░░█░█░█▀▄")
@@ -47,16 +45,17 @@ class RadioPEI:
         print("2026 © Lluis de la Rubia / LluisAsturies")
         print("[INFO] Iniciando TETRA Monitor")
 
-    def set_active_gssi(self, gssi: str):
-        print(f"[PEI] Afiliando a GSSI: {gssi}")
+# ---------------------------
+# Inicialización de radio PEI
+# ---------------------------
+radio = MotorolaPEI(cfg["pei"]["port"], cfg["pei"]["baudrate"])
 
-    def set_scan_list(self, scan_list: str):
-        print(f"[PEI] Cambiando a Scan List: {scan_list}")
+def follow_gssi(gssi: str):
+    print(f"[PEI] Afiliando a GSSI: {gssi}")
+    radio.set_active_gssi(str(gssi))
 
-radio = RadioPEI(port=cfg["pei"]["port"])
-
-def aplicar_config_radio():
-    radio.set_active_gssi(scan_config.gssi)
+def follow_scanList(scan_list: str):
+    print(f"[PEI] Cambiando a Scan List: {scan_list}")
     radio.set_scan_list(scan_config.scan_list)
 
 # ---------------------------
@@ -122,9 +121,7 @@ def escuchar_pei():
             print(f"[ERROR] PEI listener: {e}")
             time.sleep(1)
 
-# ---------------------------
-# Inicio principal
-# ---------------------------
 if __name__ == "__main__":
-    aplicar_config_radio()
+    follow_gssi(scan_config.gssi)
+    follow_scanList(scan_config.scan_list)
     escuchar_pei()
