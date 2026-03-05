@@ -1,9 +1,9 @@
 import serial
 import threading
 import time
-import os
 import yaml
 from datetime import datetime
+from typing import List
 
 from audio_buffer import AudioBuffer
 from stt_processor import STTProcessor
@@ -11,13 +11,14 @@ from keyword_filter import KeywordFilter
 from telegram_bot import TelegramBot
 from database import Database
 
+from scan_config import scan_config  # Configuración dinámica
+
 # ---------------------------
-# Cargar configuración
+# Cargar configuración principal
 # ---------------------------
 with open("config/config.yaml", "r") as f:
     cfg = yaml.safe_load(f)
 
-# Inicializar módulos
 db = Database(**cfg["database"])
 bot = TelegramBot(cfg["telegram"]["token"], cfg["telegram"]["chat_id"])
 audio_buffer = AudioBuffer(
@@ -31,30 +32,45 @@ stt = STTProcessor(model_name=cfg["stt"]["model"], language=cfg["stt"]["language
 kf = KeywordFilter("config/keywords.yaml")
 
 # ---------------------------
-# Función para manejar evento de llamada
+# PEI Radio Controller genérico
+# ---------------------------
+class RadioPEI:
+    def __init__(self, port="/dev/ttyUSB0"):
+        self.port = port
+        print(f"[INFO] RadioPEI inicializada en {port}")
+
+    def set_active_gssi(self, gssi: str):
+        print(f"[PEI] Cambiando GSSI activo a {gssi}")
+
+    def set_scan_list(self, scan_list: List[int]):
+        print(f"[PEI] Actualizando Scan List: {scan_list}")
+
+radio = RadioPEI(port=cfg["pei"]["port"])
+
+def aplicar_config_radio():
+    """Función pública para que api.py aplique cambios a la radio"""
+    radio.set_active_gssi(scan_config.gssi)
+    radio.set_scan_list(scan_config.scan_list)
+
+# ---------------------------
+# Función para procesar llamada
 # ---------------------------
 def procesar_llamada(grupo, ssi):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"evento_{grupo}_{ssi}_{timestamp}.flac"
 
-    # Iniciar grabación con pre-buffer
     audio_buffer.start_recording()
     print(f"[{timestamp}] Grabando llamada Grupo:{grupo} SSI:{ssi}")
 
-    # Esperar duración de la transmisión (o PTT detectado por PEI)
-    # Para producción, se puede usar evento CALL_END real
     while audio_buffer.recording:
-        time.sleep(0.5)  # Ajustable según frecuencia de chequeo
+        time.sleep(0.5)
 
-    # Guardar audio
     path_audio = audio_buffer.stop_recording(filename)
     print(f"[{timestamp}] Audio guardado: {path_audio}")
 
-    # Transcribir
     texto = stt.transcribir(path_audio)
     print(f"[{timestamp}] Transcripción: {texto}")
 
-    # Filtrar palabras clave
     if kf.contiene_evento(texto):
         db.guardar_evento(grupo, ssi, texto, path_audio)
         bot.enviar_alerta(grupo, ssi, texto)
@@ -63,7 +79,7 @@ def procesar_llamada(grupo, ssi):
         print(f"[{timestamp}] No se detectaron palabras clave, audio descartado")
 
 # ---------------------------
-# PEI Listener
+# Listener PEI
 # ---------------------------
 def escuchar_pei():
     port = cfg["pei"]["port"]
@@ -76,28 +92,28 @@ def escuchar_pei():
         print(f"[ERROR] No se pudo conectar al PEI: {e}")
         return
 
-    audio_buffer.start_buffer()  # Inicia buffer de audio siempre activo
+    audio_buffer.start_buffer()
 
     while True:
         try:
             frame = ser.readline()
             if not frame:
                 continue
-            # Aquí parsear frame PEI real de Motorola
-            # Ejemplo de simulación de parsing
-            # frame esperado: b"CALL_START;grupo;ssi\n"
-            try:
-                line = frame.decode().strip()
-                if line.startswith("CALL_START"):
-                    _, grupo_str, ssi_str = line.split(";")
-                    grupo = int(grupo_str)
-                    ssi = int(ssi_str)
-                    threading.Thread(target=procesar_llamada, args=(grupo, ssi)).start()
-                elif line.startswith("CALL_END"):
-                    # Se puede usar para parar grabación si se quiere
-                    audio_buffer.recording = False
-            except Exception as parse_error:
-                print(f"[WARN] No se pudo parsear frame: {frame} -> {parse_error}")
+            line = frame.decode().strip()
+            if line.startswith("CALL_START"):
+                _, grupo_str, ssi_str = line.split(";")
+                grupo = int(grupo_str)
+                ssi = int(ssi_str)
+
+                # ----------------- FILTRO DINÁMICO -----------------
+                if scan_config.gssi and ssi != int(scan_config.gssi):
+                    continue
+                if scan_config.scan_list and ssi not in scan_config.scan_list:
+                    continue
+
+                threading.Thread(target=procesar_llamada, args=(grupo, ssi)).start()
+            elif line.startswith("CALL_END"):
+                audio_buffer.recording = False
 
         except Exception as e:
             print(f"[ERROR] PEI listener: {e}")
@@ -107,5 +123,6 @@ def escuchar_pei():
 # Inicio principal
 # ---------------------------
 if __name__ == "__main__":
-    print("[INFO] Iniciando demonio TETRA Monitor producción")
+    print("[INFO] Iniciando TETRA Monitor producción")
+    aplicar_config_radio()
     escuchar_pei()
