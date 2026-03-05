@@ -1,7 +1,7 @@
 #!/bin/bash
 # Arranque manual del proyecto
 
-source venv/bin/activate
+source ../venv/bin/activate
 cd src
 
 echo "Iniciando demonio PEI y grabación selectiva..."

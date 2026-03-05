@@ -2,7 +2,9 @@ import yaml
 from pathlib import Path
 from typing import List
 
-SCAN_CONFIG_PATH = Path("config/scan.yaml")
+base_dir = os.path.dirname(os.path.abspath(__file__))
+scan_path = os.path.join(base_dir, "../config/scan.yaml")
+SCAN_CONFIG_PATH = Path(scan_path)
 
 class ScanConfig:
     def __init__(self):
