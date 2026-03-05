@@ -25,7 +25,7 @@ source ~/tetra-monitor/venv/bin/activate
 # Actualizar pip y instalar dependencias dentro del venv
 echo "Instalando dependencias de Python..."
 pip install --upgrade pip
-pip install fastapi uvicorn psycopg2-binary sounddevice soundfile pyyaml requests whisper pyserial
+pip install fastapi uvicorn psycopg2-binary sounddevice soundfile pyyaml requests openai-whisper pyserial
 
 # Crear carpetas de datos y logs
 echo "Creando estructura de carpetas necesaria..."
