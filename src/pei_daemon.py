@@ -105,12 +105,6 @@ def escuchar_pei():
                 grupo = int(grupo_str)
                 ssi = int(ssi_str)
 
-                # ----------------- FILTRO DINÁMICO -----------------
-                if scan_config.gssi and ssi != int(scan_config.gssi):
-                    continue
-                if scan_config.scan_list and ssi not in scan_config.scan_list:
-                    continue
-
                 threading.Thread(target=procesar_llamada, args=(grupo, ssi)).start()
             elif line.startswith("CALL_END"):
                 audio_buffer.recording = False
