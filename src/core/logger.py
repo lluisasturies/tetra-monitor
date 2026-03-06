@@ -2,7 +2,8 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
-LOG_DIR = "../../logs"
+base_dir = os.path.dirname(os.path.abspath(__file__))
+LOG_DIR = os.path.join(base_dir, "../../logs")
 
 class ColorFormatter(logging.Formatter):
     COLORS = {
