@@ -7,7 +7,7 @@ sudo apt update && sudo apt upgrade -y
 
 # Instalar dependencias básicas
 echo "Instalando dependencias basicas..."
-sudo apt install -y python3-pip python3-venv git build-essential libsndfile1 ffmpeg
+sudo apt install -y python3-pip python3-venv git build-essential libsndfile1 ffmpeg libportaudio2 libportaudiocpp0 portaudio19-dev
 
 # Instalar PostgreSQL
 echo "Instalando PostgreSQL..."
