@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
-scan_path = os.path.join(base_dir, "../config/scan.yaml")
+scan_path = os.path.join(base_dir, "../../config/scan.yaml")
 
 try:
     with open(scan_path, "r") as f:
