@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 from src.core.database import Database
@@ -6,8 +7,14 @@ from typing import List
 from pydantic import BaseModel
 from pathlib import Path
 
-with open("config/config.yaml") as f:
-    cfg = yaml.safe_load(f)
+base_dir = os.path.dirname(os.path.abspath(__file__))
+config_path = os.path.join(base_dir, "../config/config.yaml")
+
+try:
+    with open(config_path, "r") as f:
+        cfg = yaml.safe_load(f)
+except FileNotFoundError:
+    raise FileNotFoundError(f"No se encontró el archivo de configuración: {config_path}")
 
 db = Database(**cfg["database"])
 app = FastAPI(title="Tetra Monitor API")

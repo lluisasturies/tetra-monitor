@@ -5,6 +5,12 @@ from typing import List
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 scan_path = os.path.join(base_dir, "../config/scan.yaml")
+
+try:
+    with open(scan_path, "r") as f:
+        cfg = yaml.safe_load(f)
+except FileNotFoundError:
+    raise FileNotFoundError(f"No se encontró el archivo de Scan: {scan_path}")
 SCAN_CONFIG_PATH = Path(scan_path)
 
 class ScanConfig:

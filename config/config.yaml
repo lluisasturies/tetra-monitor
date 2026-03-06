@@ -28,3 +28,10 @@ api:
 telegram:
   token: "TU_TOKEN"
   chat_id: "TU_CHAT_ID"
+
+webrtc:
+  port: 8080
+  samplerate: 16000
+  channels: 1
+  chunk_size: 1024
+  host: "0.0.0.0"

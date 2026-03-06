@@ -21,8 +21,11 @@ from pei.pei_motorola import MotorolaPEI
 base_dir = os.path.dirname(os.path.abspath(__file__))
 config_path = os.path.join(base_dir, "../config/config.yaml")
 
-with open(config_path, "r") as f:
-    cfg = yaml.safe_load(f)
+try:
+    with open(config_path, "r") as f:
+        cfg = yaml.safe_load(f)
+except FileNotFoundError:
+    raise FileNotFoundError(f"No se encontró el archivo de configuración: {config_path}")
 
 db = Database(**cfg["database"])
 bot = TelegramBot(cfg["telegram"]["token"], cfg["telegram"]["chat_id"])
