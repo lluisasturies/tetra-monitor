@@ -125,13 +125,10 @@ if cfg.get("streaming", {}).get("enabled") and audio_buffer:
             except Exception as e:
                 streamer = None
                 logger.warning(f"No se pudo iniciar AudioStreamer: {e}")
-                print("ADVERTENCIA: Streaming no disponible. Se seguirá grabando localmente.")
         except Exception:
             logger.warning(f"No se puede conectar al servidor RTMP {rtmp_url}. Streaming deshabilitado.")
-            print(f"ADVERTENCIA: No se puede conectar al servidor RTMP {rtmp_url}. Streaming deshabilitado.")
     else:
         logger.warning("RTMP URL no definida en config.yaml. Streaming deshabilitado.")
-        print("ADVERTENCIA: RTMP URL no definida. Streaming deshabilitado.")
 
 # ---------------------------
 # Manejo de Ctrl+C y SIGTERM
@@ -152,11 +149,8 @@ logger.info("Iniciando PEI daemon con streaming (si está disponible)")
 try:
     pei_daemon.escuchar_pei(streamer)
 except RuntimeError as e:
-    # Mensaje limpio sin traceback
     logger.critical(str(e))
-    print(f"\nERROR CRÍTICO: {e}\nEl programa no puede continuar sin AudioBuffer.\n")
     sys.exit(1)
 except KeyboardInterrupt:
-    logger.info("Interrupción manual recibida, cerrando...")
     pei_daemon.shutdown(streamer)
     sys.exit(0)
