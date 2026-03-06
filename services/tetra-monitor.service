@@ -5,8 +5,8 @@ After=network.target
 [Service]
 ExecStart=/usr/bin/python3 /home/pi/tetra_monitor/src/main.py
 WorkingDirectory=/home/pi/tetra_monitor
-StandardOutput=file:/home/pi/tetra_monitor/logs/tetra_monitor.log
-StandardError=file:/home/pi/tetra_monitor/logs/tetra_monitor.log
+StandardOutput=file:/home/pi/tetra_monitor/logs/tetra-monitor.log
+StandardError=file:/home/pi/tetra_monitor/logs/tetra-monitor.log
 Restart=always
 User=pi
 
