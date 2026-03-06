@@ -38,12 +38,6 @@ chmod +x scripts/start.sh
 scripts/start.sh
 ```
 
-## 🎧 Escuchar audio remotamente (WebRTC)
-```bash
-source ~/tetra-monitor/venv/bin/activate
-python3 src/streaming/webrtc_server.py
-```
-
 ## 📝 Notas importantes
 - 📂 Logs y grabaciones se guardan en logs/ y data/audio/.
 - ⚙️ Personaliza palabras clave y configuraciones en config/.
