@@ -64,7 +64,7 @@ bot = TelegramBot(cfg["telegram"]["token"], cfg["telegram"]["chat_id"])
 audio_buffer = None
 try:
     audio_buffer = AudioBuffer(
-        device_index=cfg["audio"]["device_index"],
+        device_index=cfg["audio"].get("device_index", None),
         sample_rate=cfg["audio"]["sample_rate"],
         channels=cfg["audio"]["channels"],
         prebuffer_seconds=cfg["audio"]["prebuffer_seconds"],
@@ -72,8 +72,10 @@ try:
     )
     logger.info("AudioBuffer inicializado correctamente")
 except Exception as e:
-    logger.warning(f"No se pudo inicializar AudioBuffer: {e}")
-    print("ADVERTENCIA: No se detectó micrófono disponible. Algunas funciones estarán deshabilitadas.")
+    audio_buffer = None
+    logger.critical(f"No se pudo inicializar AudioBuffer: {e}")
+    print("ERROR: No se detectó micrófono disponible. Conecta un micrófono para procesar llamadas.")
+    sys.exit(1)
 
 stt = STTProcessor(
     model_name=cfg["stt"]["model"],
@@ -97,13 +99,12 @@ pei_daemon = PEIDaemon(
 )
 
 # ---------------------------
-# Inicializar AudioStreamer solo si habilitado y AudioBuffer disponible
+# Inicializar AudioStreamer solo si habilitado
 # ---------------------------
 streamer = None
 if cfg.get("streaming", {}).get("enabled") and audio_buffer:
     rtmp_url = cfg["streaming"].get("rtmp_url")
     if rtmp_url:
-        # Parseo robusto host y puerto
         host_port = rtmp_url.replace("rtmp://", "").split("/")[0]
         if ":" in host_port:
             host, port = host_port.split(":")
@@ -111,14 +112,12 @@ if cfg.get("streaming", {}).get("enabled") and audio_buffer:
         else:
             host = host_port
             port = 1935
-
-        # Comprobar conexión TCP al servidor RTMP
+        # Comprobar conexión al servidor RTMP
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             s.settimeout(2)
             s.connect((host, port))
             s.close()
-            # Inicializar streamer
             try:
                 streamer = AudioStreamer()
                 streamer.start()
@@ -133,12 +132,6 @@ if cfg.get("streaming", {}).get("enabled") and audio_buffer:
     else:
         logger.warning("RTMP URL no definida en config.yaml. Streaming deshabilitado.")
         print("ADVERTENCIA: RTMP URL no definida. Streaming deshabilitado.")
-else:
-    if not cfg.get("streaming", {}).get("enabled"):
-        logger.info("Streaming deshabilitado en config.yaml")
-    else:
-        logger.warning("AudioBuffer no inicializado. Streaming deshabilitado.")
-        print("ADVERTENCIA: AudioBuffer no inicializado. Streaming deshabilitado.")
 
 # ---------------------------
 # Manejo de Ctrl+C y SIGTERM
