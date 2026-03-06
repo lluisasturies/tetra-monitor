@@ -144,7 +144,7 @@ signal.signal(signal.SIGTERM, signal_handler)
 # ---------------------------
 # Entrar en modo escucha PEI
 # ---------------------------
-logger.info("Iniciando PEI daemon con streaming (si está disponible)")
+logger.info("Iniciando PEI daemon con streaming")
 
 try:
     pei_daemon.escuchar_pei(streamer)

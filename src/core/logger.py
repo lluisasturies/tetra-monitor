@@ -27,11 +27,11 @@ def setup_logger(debug=False):
     level = logging.DEBUG if debug else logging.INFO
 
     formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+        "%(asctime)s | [%(levelname)s] | %(message)s"
     )
 
     console_formatter = ColorFormatter(
-        "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+        "%(asctime)s | [%(levelname)s] | %(message)s"
     )
 
     root = logging.getLogger()
