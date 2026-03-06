@@ -11,10 +11,11 @@ from api.stt_processor import STTProcessor
 from filters.keyword_filter import KeywordFilter
 from integrations.telegram_bot import TelegramBot
 from core.database import Database
-from core.scan_config import scan_config
 from pei.pei_motorola import MotorolaPEI
-from streaming.ffmpeg_streamer import AudioStreamer
 from pei.pei_daemon import PEIDaemon
+
+from streaming.rtmp_streamer import RTMPStreamer
+from streaming.icecast_streamer import IcecastStreamer
 
 # ---------------------------
 # Logger y Banner
@@ -26,8 +27,7 @@ print()
 print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀█░░░░░█▄█░█▀█░█▀█░▀█▀░▀█▀░█▀█░█▀▄")
 print("░░█░░█▀▀░░█░░█▀▄░█▀█░▄▄▄░█░█░█░█░█░█░░█░░░█░░█░█░█▀▄")
 print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀░▀░▀▀▀░░▀░░▀▀▀░▀░▀")
-print("2026 © Lluis de la Rubia / LluisAsturies")
-print()
+print("2026 © Lluis de la Rubia / LluisAsturies\n")
 
 # ---------------------------
 # Definir rutas del proyecto
@@ -35,7 +35,6 @@ print()
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 KEYWORDS_PATH = os.path.join(PROJECT_ROOT, "config", "keywords.yaml")
-LOG_DIR = os.path.join(PROJECT_ROOT, "logs")
 AUDIO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "audio_output")
 
 # ---------------------------
@@ -45,10 +44,12 @@ try:
     with open(CONFIG_PATH, "r") as f:
         cfg = yaml.safe_load(f)
     logger.info("Configuración cargada correctamente")
+
 except FileNotFoundError:
     logger.critical(f"No se encontró config.yaml en {CONFIG_PATH}")
     print(f"ERROR: config.yaml no encontrado en {CONFIG_PATH}")
     sys.exit(1)
+
 except yaml.YAMLError as e:
     logger.critical(f"Error parseando config.yaml: {e}")
     print(f"ERROR: config.yaml contiene errores de sintaxis YAML")
@@ -62,6 +63,7 @@ bot = TelegramBot(cfg["telegram"]["token"], cfg["telegram"]["chat_id"])
 
 # Intentar inicializar AudioBuffer
 audio_buffer = None
+
 try:
     audio_buffer = AudioBuffer(
         device_index=cfg["audio"].get("device_index", None),
@@ -71,6 +73,7 @@ try:
         output_dir=AUDIO_OUTPUT_DIR
     )
     logger.info("AudioBuffer inicializado correctamente")
+
 except Exception as e:
     audio_buffer = None
     logger.critical(f"No se pudo inicializar AudioBuffer: {e}")
@@ -99,39 +102,51 @@ pei_daemon = PEIDaemon(
 )
 
 # ---------------------------
-# Inicializar AudioStreamer solo si habilitado
+# Inicializar Streaming
 # ---------------------------
 streamer = None
 if cfg.get("streaming", {}).get("enabled") and audio_buffer:
     rtmp_url = cfg["streaming"].get("rtmp_url")
+    icecast_url = cfg["streaming"].get("icecast_url")
+
     if rtmp_url:
-        host_port = rtmp_url.replace("rtmp://", "").split("/")[0]
+        streamer = RTMPStreamer(rtmp_url, cfg["audio"]["sample_rate"], cfg["audio"]["channels"])
+
+    elif icecast_url:
+        streamer = IcecastStreamer(icecast_url, cfg["audio"]["sample_rate"], cfg["audio"]["channels"])
+
+    else:
+        logger.warning("No se definió RTMP ni Icecast en config.yaml. Streaming deshabilitado.")
+
+    # Comprobar conexión al servidor
+    if streamer:
+        host_port = streamer.url.replace("http://","").replace("https://","").replace("rtmp://","").split("/")[0]
+
         if ":" in host_port:
             host, port = host_port.split(":")
             port = int(port)
+
         else:
             host = host_port
-            port = 1935
-        # Comprobar conexión al servidor RTMP
+            port = 1935 if isinstance(streamer, RTMPStreamer) else 8000
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
         try:
             s.settimeout(2)
             s.connect((host, port))
             s.close()
+
             try:
-                streamer = AudioStreamer()
                 streamer.start()
-                logger.info("Streaming activado")
+
             except Exception as e:
-                streamer = None
-                logger.warning(f"No se pudo iniciar AudioStreamer: {e}")
+                logger.warning(f"No se pudo iniciar el streamer: {e}")
+
         except Exception:
-            logger.warning(f"No se puede conectar al servidor RTMP {rtmp_url}. Streaming deshabilitado.")
-    else:
-        logger.warning("RTMP URL no definida en config.yaml. Streaming deshabilitado.")
+            logger.warning(f"No se puede conectar al servidor {streamer.url}. Streaming deshabilitado.")
 
 # ---------------------------
-# Manejo de Ctrl+C y SIGTERM
+# Manejo de señales
 # ---------------------------
 def signal_handler(sig, frame):
     logger.info("Señal de interrupción recibida, cerrando aplicación...")
@@ -148,9 +163,12 @@ logger.info("Iniciando PEI daemon con streaming")
 
 try:
     pei_daemon.escuchar_pei(streamer)
+
 except RuntimeError as e:
     logger.critical(str(e))
+    print(f"\nERROR CRÍTICO: {e}\nNo se pueden procesar llamadas sin micrófono.\n")
     sys.exit(1)
+
 except KeyboardInterrupt:
     pei_daemon.shutdown(streamer)
     sys.exit(0)
