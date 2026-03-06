@@ -57,7 +57,7 @@ stt = STTProcessor(
     language=cfg["stt"]["language"]
 )
 
-kf = KeywordFilter(os.path.join(base_dir, "config/keywords.yaml"))
+kf = KeywordFilter(os.path.join(base_dir, "../config/keywords.yaml"))
 
 # ---------------------------
 # Inicializar Motorola PEI
