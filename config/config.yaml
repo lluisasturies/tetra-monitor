@@ -9,6 +9,11 @@ audio:
   prebuffer_seconds: 5
   output_dir: "./data/audio"
 
+streaming:
+  enabled: true
+  rtmp_url: rtmp://localhost/live/tetra
+  icecast_url: icecast://source:password@localhost:8000/tetra
+
 stt:
   model: "base"  # tiny/base/medium
   language: "es"
@@ -28,10 +33,3 @@ api:
 telegram:
   token: "TU_TOKEN"
   chat_id: "TU_CHAT_ID"
-
-webrtc:
-  port: 8080
-  samplerate: 16000
-  channels: 1
-  chunk_size: 1024
-  host: "0.0.0.0"

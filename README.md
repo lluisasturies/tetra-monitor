@@ -18,13 +18,13 @@ Proyecto para **monitorización de redes TETRA** usando:
 ---
 
 ## 🗂️ Estructura del proyecto
-tetra-monitor/
-├─ src/ # Código Python modular
-│ └─ streaming/ # Servidor WebRTC
-├─ config/ # Configuraciones y palabras clave
-├─ scripts/ # Instalación y arranque
-├─ data/ # Grabaciones de audio
-└─ logs/ # Logs de ejecución
++ tetra-monitor/
+  + src/
+    + streaming/
+  + config/
+  + scripts/
+  + data/
+  + logs/
 
 ## Instalación
 ```bash
