@@ -71,7 +71,7 @@ def detectar_puerto_pei(port_config: str):
 # ---------------------------
 # Inicialización de radio PEI
 # ---------------------------
-port_detected = detectar_puerto_pei()
+port_detected = detectar_puerto_pei(cfg["pei"]["port"])
 if port_detected is None:
     exit(1)  # Salida limpia si no hay dispositivo
 
