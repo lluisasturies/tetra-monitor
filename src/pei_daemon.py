@@ -50,15 +50,23 @@ print("[INFO] Iniciando TETRA Monitor")
 # ---------------------------
 # Función para detectar puerto PEI automáticamente
 # ---------------------------
-def detectar_puerto_pei():
+def detectar_puerto_pei(port_config: str):
+    # Primero, intentar usar el puerto especificado en config.yaml
+    if port_config and os.path.exists(port_config):
+        print(f"[INFO] Usando puerto especificado: {port_config}")
+        return port_config
+
+    # Si no existe, buscar automáticamente dispositivos serie
     posibles_puertos = glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*")
-    if not posibles_puertos:
-        print("[ERROR] No se detectó ningún dispositivo Motorola PEI conectado.")
-        print("Por favor, conecta el dispositivo y vuelve a ejecutar el programa.")
-        return None
-    puerto = posibles_puertos[0]
-    print(f"[INFO] Puerto PEI detectado automáticamente: {puerto}")
-    return puerto
+    if posibles_puertos:
+        puerto = posibles_puertos[0]
+        print(f"[INFO] Puerto especificado no encontrado. Detectado automáticamente: {puerto}")
+        return puerto
+
+    # Ningún puerto encontrado
+    print("[ERROR] No se detectó ningún dispositivo Motorola PEI conectado.")
+    print("Por favor, conecta el dispositivo y vuelve a ejecutar el programa.")
+    return None
 
 # ---------------------------
 # Inicialización de radio PEI
