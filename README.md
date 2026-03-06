@@ -21,12 +21,12 @@ Proyecto para monitorización de una red TETRA usando:
 
 ## Instalación
 ```bash
-chmod +x scripts/setup_env.sh
-scripts/setup_env.sh
+chmod +x scripts/setup.sh
+scripts/setup.sh
 ```
 
 ## Iniciar
 ```bash
 chmod +x scripts/start.sh
-scripts/setup_env.sh
+scripts/start.sh
 ```

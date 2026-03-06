@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
-from database import Database
+from src.core.database import Database
 import yaml
 from typing import List
 from pydantic import BaseModel

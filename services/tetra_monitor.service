@@ -1,9 +1,9 @@
 [Unit]
-Description=TETRA Monitor Daemon
+Description=TETRA Monitor
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/pi/tetra_monitor/src/pei_daemon.py
+ExecStart=/usr/bin/python3 /home/pi/tetra_monitor/src/main.py
 WorkingDirectory=/home/pi/tetra_monitor
 StandardOutput=file:/home/pi/tetra_monitor/logs/tetra_monitor.log
 StandardError=file:/home/pi/tetra_monitor/logs/tetra_monitor.log

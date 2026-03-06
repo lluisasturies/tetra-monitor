@@ -7,6 +7,6 @@ VENV_PATH=~/tetra-monitor/venv
 source $VENV_PATH/bin/activate
 
 echo "Iniciando demonio PEI y grabación selectiva..."
-python3 src/pei_daemon.py &
+python3 src/main.py &
 PID=$!
 echo "PID: $PID"
