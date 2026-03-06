@@ -32,7 +32,7 @@ print()
 # Cargar configuración
 # ---------------------------
 base_dir = os.path.dirname(os.path.abspath(__file__))
-config_path = os.path.join(base_dir, "../config/config.yaml")
+config_path = os.path.join(base_dir, "config/config.yaml")
 
 with open(config_path, "r") as f:
     cfg = yaml.safe_load(f)
@@ -57,41 +57,33 @@ stt = STTProcessor(
     language=cfg["stt"]["language"]
 )
 
-kf = KeywordFilter(os.path.join(base_dir, "../config/keywords.yaml"))
-
-# ---------------------------
-# Inicializar Motorola PEI
-# ---------------------------
-port = cfg["pei"]["port"]
-baudrate = cfg["pei"]["baudrate"]
-radio = MotorolaPEI(port, baudrate)
+kf = KeywordFilter(os.path.join(base_dir, "config/keywords.yaml"))
 
 # ---------------------------
 # Inicializar PEI Daemon
 # ---------------------------
 pei_daemon = PEIDaemon(
-    motorola_pei=radio,
+    motorola_pei_cls=MotorolaPEI,
     audio_buffer=audio_buffer,
     stt_processor=stt,
     keyword_filter=kf,
     db=db,
     bot=bot,
-    port=port,
-    baudrate=baudrate
+    port=cfg["pei"].get("port", ""),  # dejar vacío para detección automática
+    baudrate=cfg["pei"]["baudrate"]
 )
 
 # ---------------------------
-# Inicializar AudioStreamer solo si se habilita
+# Inicializar AudioStreamer solo si está habilitado
 # ---------------------------
 streamer = None
 if cfg.get("streaming", {}).get("enabled"):
-    # Primero arranca el PEI daemon y luego inicializa streaming
     streamer = AudioStreamer()
     streamer.start()
     logger.info("Streaming activado")
 
 # ---------------------------
-# Manejo de Ctrl+C
+# Manejo de Ctrl+C y SIGTERM
 # ---------------------------
 def signal_handler(sig, frame):
     logger.info("Señal de interrupción recibida, cerrando aplicación...")
