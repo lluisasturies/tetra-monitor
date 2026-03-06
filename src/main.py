@@ -1,8 +1,8 @@
 import os
+import sys
 import logging
 import yaml
 import signal
-import sys
 import socket
 
 from core.logger import setup_logger
@@ -30,14 +30,29 @@ print("2026 © Lluis de la Rubia / LluisAsturies")
 print()
 
 # ---------------------------
+# Definir rutas del proyecto
+# ---------------------------
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
+KEYWORDS_PATH = os.path.join(PROJECT_ROOT, "config", "keywords.yaml")
+LOG_DIR = os.path.join(PROJECT_ROOT, "logs")
+AUDIO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "audio_output")
+
+# ---------------------------
 # Cargar configuración
 # ---------------------------
-base_dir = os.path.dirname(os.path.abspath(__file__))
-config_path = os.path.join(base_dir, "config/config.yaml")
-
-with open(config_path, "r") as f:
-    cfg = yaml.safe_load(f)
-logger.info("Configuración cargada correctamente")
+try:
+    with open(CONFIG_PATH, "r") as f:
+        cfg = yaml.safe_load(f)
+    logger.info("Configuración cargada correctamente")
+except FileNotFoundError:
+    logger.critical(f"No se encontró config.yaml en {CONFIG_PATH}")
+    print(f"ERROR: config.yaml no encontrado en {CONFIG_PATH}")
+    sys.exit(1)
+except yaml.YAMLError as e:
+    logger.critical(f"Error parseando config.yaml: {e}")
+    print(f"ERROR: config.yaml contiene errores de sintaxis YAML")
+    sys.exit(1)
 
 # ---------------------------
 # Inicializar componentes
@@ -53,18 +68,19 @@ try:
         sample_rate=cfg["audio"]["sample_rate"],
         channels=cfg["audio"]["channels"],
         prebuffer_seconds=cfg["audio"]["prebuffer_seconds"],
-        output_dir=cfg["audio"]["output_dir"]
+        output_dir=AUDIO_OUTPUT_DIR
     )
     logger.info("AudioBuffer inicializado correctamente")
 except Exception as e:
     logger.warning(f"No se pudo inicializar AudioBuffer: {e}")
+    print("ADVERTENCIA: No se detectó micrófono disponible. Algunas funciones estarán deshabilitadas.")
 
 stt = STTProcessor(
     model_name=cfg["stt"]["model"],
     language=cfg["stt"]["language"]
 )
 
-kf = KeywordFilter(os.path.join(base_dir, "config/keywords.yaml"))
+kf = KeywordFilter(KEYWORDS_PATH)
 
 # ---------------------------
 # Inicializar PEI Daemon
@@ -81,20 +97,20 @@ pei_daemon = PEIDaemon(
 )
 
 # ---------------------------
-# Inicializar AudioStreamer solo si habilitado y RTMP disponible
+# Inicializar AudioStreamer solo si habilitado y AudioBuffer disponible
 # ---------------------------
 streamer = None
 if cfg.get("streaming", {}).get("enabled") and audio_buffer:
     rtmp_url = cfg["streaming"].get("rtmp_url")
     if rtmp_url:
-        # Parseo robusto del host y puerto
-        host_port = rtmp_url.replace("rtmp://","").split("/")[0]
+        # Parseo robusto host y puerto
+        host_port = rtmp_url.replace("rtmp://", "").split("/")[0]
         if ":" in host_port:
             host, port = host_port.split(":")
             port = int(port)
         else:
             host = host_port
-            port = 1935  # puerto por defecto RTMP
+            port = 1935
 
         # Comprobar conexión TCP al servidor RTMP
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -108,16 +124,21 @@ if cfg.get("streaming", {}).get("enabled") and audio_buffer:
                 streamer.start()
                 logger.info("Streaming activado")
             except Exception as e:
+                streamer = None
                 logger.warning(f"No se pudo iniciar AudioStreamer: {e}")
+                print("ADVERTENCIA: Streaming no disponible. Se seguirá grabando localmente.")
         except Exception:
             logger.warning(f"No se puede conectar al servidor RTMP {rtmp_url}. Streaming deshabilitado.")
+            print(f"ADVERTENCIA: No se puede conectar al servidor RTMP {rtmp_url}. Streaming deshabilitado.")
     else:
         logger.warning("RTMP URL no definida en config.yaml. Streaming deshabilitado.")
+        print("ADVERTENCIA: RTMP URL no definida. Streaming deshabilitado.")
 else:
     if not cfg.get("streaming", {}).get("enabled"):
         logger.info("Streaming deshabilitado en config.yaml")
     else:
         logger.warning("AudioBuffer no inicializado. Streaming deshabilitado.")
+        print("ADVERTENCIA: AudioBuffer no inicializado. Streaming deshabilitado.")
 
 # ---------------------------
 # Manejo de Ctrl+C y SIGTERM
