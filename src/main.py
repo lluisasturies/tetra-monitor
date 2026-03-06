@@ -3,6 +3,8 @@ import logging
 import yaml
 import signal
 import sys
+import socket
+import sounddevice as sd
 
 from core.logger import setup_logger
 from audio.audio_buffer import AudioBuffer
@@ -44,13 +46,19 @@ logger.info("Configuración cargada correctamente")
 db = Database(**cfg["database"])
 bot = TelegramBot(cfg["telegram"]["token"], cfg["telegram"]["chat_id"])
 
-audio_buffer = AudioBuffer(
-    device_index=cfg["audio"]["device_index"],
-    sample_rate=cfg["audio"]["sample_rate"],
-    channels=cfg["audio"]["channels"],
-    prebuffer_seconds=cfg["audio"]["prebuffer_seconds"],
-    output_dir=cfg["audio"]["output_dir"]
-)
+# Intentar inicializar AudioBuffer
+audio_buffer = None
+try:
+    audio_buffer = AudioBuffer(
+        device_index=cfg["audio"]["device_index"],
+        sample_rate=cfg["audio"]["sample_rate"],
+        channels=cfg["audio"]["channels"],
+        prebuffer_seconds=cfg["audio"]["prebuffer_seconds"],
+        output_dir=cfg["audio"]["output_dir"]
+    )
+    logger.info("AudioBuffer inicializado correctamente")
+except Exception as e:
+    logger.warning(f"No se pudo inicializar AudioBuffer: {e}")
 
 stt = STTProcessor(
     model_name=cfg["stt"]["model"],
@@ -69,18 +77,40 @@ pei_daemon = PEIDaemon(
     keyword_filter=kf,
     db=db,
     bot=bot,
-    port=cfg["pei"].get("port", ""),  # dejar vacío para detección automática
+    port=cfg["pei"].get("port", ""),  # vacío = detección automática
     baudrate=cfg["pei"]["baudrate"]
 )
 
 # ---------------------------
-# Inicializar AudioStreamer solo si está habilitado
+# Inicializar AudioStreamer solo si habilitado y RTMP disponible
 # ---------------------------
 streamer = None
-if cfg.get("streaming", {}).get("enabled"):
-    streamer = AudioStreamer()
-    streamer.start()
-    logger.info("Streaming activado")
+if cfg.get("streaming", {}).get("enabled") and audio_buffer:
+    rtmp_url = cfg["streaming"].get("rtmp_url")
+    if rtmp_url:
+        # Comprobar conexión RTMP
+        host, port = rtmp_url.replace("rtmp://","").split("/")[0].split(":") if ":" in rtmp_url else (rtmp_url.split("/")[0], 1935)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.settimeout(2)
+            s.connect((host, int(port)))
+            s.close()
+            # Inicializar streamer
+            try:
+                streamer = AudioStreamer()
+                streamer.start()
+                logger.info("Streaming activado")
+            except Exception as e:
+                logger.warning(f"No se pudo iniciar AudioStreamer: {e}")
+        except Exception:
+            logger.warning(f"No se puede conectar al servidor RTMP {rtmp_url}. Streaming deshabilitado.")
+    else:
+        logger.warning("RTMP URL no definida en config.yaml. Streaming deshabilitado.")
+else:
+    if not cfg.get("streaming", {}).get("enabled"):
+        logger.info("Streaming deshabilitado en config.yaml")
+    else:
+        logger.warning("AudioBuffer no inicializado. Streaming deshabilitado.")
 
 # ---------------------------
 # Manejo de Ctrl+C y SIGTERM
@@ -96,5 +126,5 @@ signal.signal(signal.SIGTERM, signal_handler)
 # ---------------------------
 # Entrar en modo escucha PEI
 # ---------------------------
-logger.info("Iniciando PEI daemon con streaming")
+logger.info("Iniciando PEI daemon con streaming (si está disponible)")
 pei_daemon.escuchar_pei(streamer)
