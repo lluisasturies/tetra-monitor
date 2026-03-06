@@ -11,8 +11,9 @@ logger = logging.getLogger(__name__)
 call_logger = logging.getLogger("calls")
 
 class PEIDaemon:
-    def __init__(self, motorola_pei, audio_buffer, stt_processor, keyword_filter, db, bot, port: Optional[str] = None, baudrate: int = 115200):
-        self.radio = motorola_pei
+    def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter, db, bot, port: Optional[str] = None, baudrate: int = 115200, reconnect_interval: int = 5):
+        self.motorola_pei_cls = motorola_pei_cls
+        self.radio = None
         self.audio_buffer = audio_buffer
         self.stt = stt_processor
         self.kf = keyword_filter
@@ -21,20 +22,32 @@ class PEIDaemon:
         self.port = port
         self.baudrate = baudrate
         self.running = False
+        self.reconnect_interval = reconnect_interval
 
     def detectar_puerto_pei(self):
         if self.port and os.path.exists(self.port):
-            logger.info(f"Usando puerto especificado: {self.port}")
             return self.port
 
         posibles_puertos = glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*")
         if posibles_puertos:
-            puerto = posibles_puertos[0]
-            logger.warning(f"Puerto configurado no encontrado. Detectado automáticamente: {puerto}")
-            return puerto
+            return posibles_puertos[0]
 
-        logger.critical("No se detectó ningún dispositivo Motorola PEI conectado")
         return None
+
+    def conectar_radio(self):
+        while self.running and self.radio is None:
+            port_detected = self.detectar_puerto_pei()
+            if port_detected:
+                try:
+                    self.radio = self.motorola_pei_cls(port_detected, self.baudrate)
+                    logger.info(f"Motorola PEI conectado en {port_detected}")
+                except serial.SerialException:
+                    logger.warning(f"No se pudo conectar al puerto {port_detected}, reintentando en {self.reconnect_interval}s")
+                    self.radio = None
+            else:
+                logger.warning(f"No se detecta ningún PEI conectado, reintentando en {self.reconnect_interval}s")
+            if self.radio is None:
+                time.sleep(self.reconnect_interval)
 
     def procesar_llamada(self, grupo, ssi, streamer=None):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -72,25 +85,19 @@ class PEIDaemon:
         call_logger.info(f"CALL END | GSSI:{grupo} | SSI:{ssi} | AUDIO:{path_audio}")
 
     def escuchar_pei(self, streamer=None):
-        port_detected = self.detectar_puerto_pei()
-        if port_detected is None:
-            logger.critical("Finalizando daemon por falta de dispositivo PEI")
-            return
-
-        try:
-            ser = serial.Serial(port_detected, self.baudrate, timeout=1)
-            logger.info(f"Conectado a PEI en {port_detected} a {self.baudrate} bps")
-        except serial.SerialException:
-            logger.exception("No se pudo conectar al dispositivo PEI")
-            return
-
         self.audio_buffer.start_buffer()
-        logger.info("Audio buffer iniciado")
         self.running = True
+        logger.info("Audio buffer iniciado")
+        self.conectar_radio()
 
         try:
             while self.running:
-                frame = ser.readline()
+                if self.radio is None:
+                    # Intentar reconectar
+                    self.conectar_radio()
+                    continue
+
+                frame = self.radio.ser.readline()
                 if not frame:
                     continue
                 line = frame.decode(errors="ignore").strip()
@@ -103,6 +110,7 @@ class PEIDaemon:
                 elif line.startswith("CALL_END"):
                     logger.debug("CALL_END detectado")
                     self.audio_buffer.recording = False
+
         except KeyboardInterrupt:
             logger.info("Interrupción recibida, cerrando PEI daemon...")
         finally:
