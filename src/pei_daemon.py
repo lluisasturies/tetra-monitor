@@ -5,6 +5,7 @@ import time
 import yaml
 from datetime import datetime
 from typing import List
+import glob
 
 from audio_buffer import AudioBuffer
 from stt_processor import STTProcessor
@@ -36,20 +37,41 @@ stt = STTProcessor(model_name=cfg["stt"]["model"], language=cfg["stt"]["language
 keywords_path = os.path.join(base_dir, "../config/keywords.yaml")
 kf = KeywordFilter(keywords_path)
 
-class RadioPEI:
-    def __init__(self):
-        print()
-        print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀█░░░░░█▄█░█▀█░█▀█░▀█▀░▀█▀░█▀█░█▀▄")
-        print("░░█░░█▀▀░░█░░█▀▄░█▀█░▄▄▄░█░█░█░█░█░█░░█░░░█░░█░█░█▀▄")
-        print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀░▀░▀▀▀░░▀░░▀▀▀░▀░▀")
-        print("2026 © Lluis de la Rubia / LluisAsturies")
-        print("[INFO] Iniciando TETRA Monitor")
+# ---------------------------
+# Mensaje de bienvenida
+# ---------------------------
+print()
+print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀█░░░░░█▄█░█▀█░█▀█░▀█▀░▀█▀░█▀█░█▀▄")
+print("░░█░░█▀▀░░█░░█▀▄░█▀█░▄▄▄░█░█░█░█░█░█░░█░░░█░░█░█░█▀▄")
+print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀░▀░▀▀▀░░▀░░▀▀▀░▀░▀")
+print("2026 © Lluis de la Rubia / LluisAsturies")
+print("[INFO] Iniciando TETRA Monitor")
+
+# ---------------------------
+# Función para detectar puerto PEI automáticamente
+# ---------------------------
+def detectar_puerto_pei():
+    posibles_puertos = glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*")
+    if not posibles_puertos:
+        print("[ERROR] No se detectó ningún dispositivo Motorola PEI conectado.")
+        print("Por favor, conecta el dispositivo y vuelve a ejecutar el programa.")
+        return None
+    puerto = posibles_puertos[0]
+    print(f"[INFO] Puerto PEI detectado automáticamente: {puerto}")
+    return puerto
 
 # ---------------------------
 # Inicialización de radio PEI
 # ---------------------------
-radio = MotorolaPEI(cfg["pei"]["port"], cfg["pei"]["baudrate"])
+port_detected = detectar_puerto_pei()
+if port_detected is None:
+    exit(1)  # Salida limpia si no hay dispositivo
 
+radio = MotorolaPEI(port_detected, cfg["pei"]["baudrate"])
+
+# ---------------------------
+# Funciones de control del PEI
+# ---------------------------
 def follow_gssi(gssi: str):
     print(f"[PEI] Afiliando a GSSI: {gssi}")
     radio.set_active_gssi(str(gssi))
@@ -88,7 +110,7 @@ def procesar_llamada(grupo, ssi):
 # Listener PEI
 # ---------------------------
 def escuchar_pei():
-    port = cfg["pei"]["port"]
+    port = port_detected
     baudrate = cfg["pei"]["baudrate"]
 
     print(f"[INFO] Inicializando RadioPEI en {port}")
@@ -96,8 +118,8 @@ def escuchar_pei():
     try:
         ser = serial.Serial(port, baudrate, timeout=1)
         print(f"[INFO] Conectado a PEI en {port} a {baudrate} bps")
-    except Exception as e:
-        print(f"[ERROR] No se pudo conectar al PEI: {e}")
+    except serial.SerialException:
+        print(f"[ERROR] No se pudo conectar al PEI en {port}. Verifica el dispositivo y los permisos.")
         return
 
     audio_buffer.start_buffer()
@@ -107,12 +129,11 @@ def escuchar_pei():
             frame = ser.readline()
             if not frame:
                 continue
-            line = frame.decode().strip()
+            line = frame.decode(errors="ignore").strip()
             if line.startswith("CALL_START"):
                 _, grupo_str, ssi_str = line.split(";")
                 grupo = int(grupo_str)
                 ssi = int(ssi_str)
-
                 threading.Thread(target=procesar_llamada, args=(grupo, ssi)).start()
             elif line.startswith("CALL_END"):
                 audio_buffer.recording = False
@@ -121,6 +142,9 @@ def escuchar_pei():
             print(f"[ERROR] PEI listener: {e}")
             time.sleep(1)
 
+# ---------------------------
+# Inicio del daemon
+# ---------------------------
 if __name__ == "__main__":
     follow_gssi(scan_config.gssi)
     follow_scanList(scan_config.scan_list)
