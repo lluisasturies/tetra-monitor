@@ -32,7 +32,7 @@ print()
 # Cargar configuración
 # ---------------------------
 base_dir = os.path.dirname(os.path.abspath(__file__))
-config_path = os.path.join(base_dir, "config/config.yaml")
+config_path = os.path.join(base_dir, "../config/config.yaml")
 
 with open(config_path, "r") as f:
     cfg = yaml.safe_load(f)
@@ -57,7 +57,7 @@ stt = STTProcessor(
     language=cfg["stt"]["language"]
 )
 
-kf = KeywordFilter(os.path.join(base_dir, "config/keywords.yaml"))
+kf = KeywordFilter(os.path.join(base_dir, "../config/keywords.yaml"))
 
 # ---------------------------
 # Inicializar PEI Daemon
