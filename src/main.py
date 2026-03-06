@@ -7,13 +7,13 @@ from datetime import datetime
 from typing import List
 import glob
 
-from src.audio.audio_buffer import AudioBuffer
-from src.api.stt_processor import STTProcessor
-from src.filters.keyword_filter import KeywordFilter
-from src.integrations.telegram_bot import TelegramBot
-from src.core.database import Database
-from src.core.scan_config import scan_config
-from src.pei.pei_motorola import MotorolaPEI
+from audio.audio_buffer import AudioBuffer
+from api.stt_processor import STTProcessor
+from filters.keyword_filter import KeywordFilter
+from integrations.telegram_bot import TelegramBot
+from core.database import Database
+from core.scan_config import scan_config
+from pei.pei_motorola import MotorolaPEI
 
 # ---------------------------
 # Cargar configuración principal
