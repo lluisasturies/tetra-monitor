@@ -4,7 +4,6 @@ import yaml
 import signal
 import sys
 import socket
-import sounddevice as sd
 
 from core.logger import setup_logger
 from audio.audio_buffer import AudioBuffer
@@ -34,7 +33,7 @@ print()
 # Cargar configuración
 # ---------------------------
 base_dir = os.path.dirname(os.path.abspath(__file__))
-config_path = os.path.join(base_dir, "../config/config.yaml")
+config_path = os.path.join(base_dir, "config/config.yaml")
 
 with open(config_path, "r") as f:
     cfg = yaml.safe_load(f)
@@ -65,7 +64,7 @@ stt = STTProcessor(
     language=cfg["stt"]["language"]
 )
 
-kf = KeywordFilter(os.path.join(base_dir, "../config/keywords.yaml"))
+kf = KeywordFilter(os.path.join(base_dir, "config/keywords.yaml"))
 
 # ---------------------------
 # Inicializar PEI Daemon
@@ -88,12 +87,20 @@ streamer = None
 if cfg.get("streaming", {}).get("enabled") and audio_buffer:
     rtmp_url = cfg["streaming"].get("rtmp_url")
     if rtmp_url:
-        # Comprobar conexión RTMP
-        host, port = rtmp_url.replace("rtmp://","").split("/")[0].split(":") if ":" in rtmp_url else (rtmp_url.split("/")[0], 1935)
+        # Parseo robusto del host y puerto
+        host_port = rtmp_url.replace("rtmp://","").split("/")[0]
+        if ":" in host_port:
+            host, port = host_port.split(":")
+            port = int(port)
+        else:
+            host = host_port
+            port = 1935  # puerto por defecto RTMP
+
+        # Comprobar conexión TCP al servidor RTMP
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             s.settimeout(2)
-            s.connect((host, int(port)))
+            s.connect((host, port))
             s.close()
             # Inicializar streamer
             try:
