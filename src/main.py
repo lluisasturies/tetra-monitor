@@ -148,4 +148,15 @@ signal.signal(signal.SIGTERM, signal_handler)
 # Entrar en modo escucha PEI
 # ---------------------------
 logger.info("Iniciando PEI daemon con streaming (si está disponible)")
-pei_daemon.escuchar_pei(streamer)
+
+try:
+    pei_daemon.escuchar_pei(streamer)
+except RuntimeError as e:
+    # Mensaje limpio sin traceback
+    logger.critical(str(e))
+    print(f"\nERROR CRÍTICO: {e}\nEl programa no puede continuar sin AudioBuffer.\n")
+    sys.exit(1)
+except KeyboardInterrupt:
+    logger.info("Interrupción manual recibida, cerrando...")
+    pei_daemon.shutdown(streamer)
+    sys.exit(0)
