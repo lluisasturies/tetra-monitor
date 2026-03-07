@@ -8,4 +8,12 @@ class TelegramBot:
     def enviar_alerta(self, grupo, ssi, texto):
         mensaje = f"🚨 ALERTA TETRA\nGrupo: {grupo}\nSSI: {ssi}\nTexto: {texto}"
         url = f"https://api.telegram.org/bot{self.token}/sendMessage"
-        requests.post(url, data={"chat_id": self.chat_id, "text": mensaje})
+        try:
+            r = requests.post(
+                url,
+                data={"chat_id": self.chat_id, "text": mensaje},
+                timeout=10  # nunca bloquear más de 10s
+            )
+            r.raise_for_status()
+        except requests.RequestException as e:
+            logger.error(f"Error enviando alerta Telegram: {e}")
