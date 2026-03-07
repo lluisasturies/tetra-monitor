@@ -125,15 +125,6 @@ JWT_SECRET=un_secreto_largo_y_aleatorio
 API_KEY=una_clave_larga_y_aleatoria
 ```
 
-> ⚠️ **Nunca subas el archivo `.env` a git.** Está incluido en `.gitignore`.
-
-### 5. Crear la base de datos
-
-```bash
-psql -U postgres -c "CREATE DATABASE tetra;"
-psql -U postgres -d tetra -f data/db/schema.sql
-```
-
 ### 6. Ajustar la configuración
 
 Edita `config/config.yaml` según tu entorno:
@@ -173,13 +164,6 @@ keywords:
 ```bash
 chmod +x scripts/start.sh
 scripts/start.sh
-```
-
-O directamente:
-
-```bash
-cd src
-python main.py
 ```
 
 ### API REST
@@ -309,7 +293,6 @@ API REST (FastAPI) ──── database.listar_eventos()
 - Las credenciales se gestionan exclusivamente mediante variables de entorno (`.env`)
 - La API REST requiere `x-api-key` en todas las peticiones (excepto `/health`)
 - Para streaming remoto, usa siempre **RTMPS** o **HTTPS/WSS** para Icecast
-- El archivo `.env` está incluido en `.gitignore` — nunca lo subas al repositorio
 
 ---
 
