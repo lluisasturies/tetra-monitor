@@ -1,31 +1,14 @@
-from .base_streamer import BaseAudioStreamer
-import subprocess
-import logging
+from streaming.base_streamer import BaseStreamer
 
-logger = logging.getLogger(__name__)
-
-class RTMPStreamer(BaseAudioStreamer):
-    def __init__(self, url, samplerate=16000, channels=1):
-        super().__init__(samplerate, channels)
-        self.url = url
-        self.codec = "aac"
-        self.fmt = "flv"
-
-    def start(self):
-        cmd = [
+class RTMPStreamer(BaseStreamer):
+    def build_ffmpeg_cmd(self):
+        return [
             "ffmpeg",
-            "-loglevel", "error",
             "-f", "f32le",
             "-ar", str(self.samplerate),
             "-ac", str(self.channels),
-            "-i", "pipe:0",
-            "-acodec", self.codec,
-            "-b:a", "128k",
-            "-f", self.fmt,
+            "-i", "-",
+            "-c:a", "aac",
+            "-f", "flv",
             self.url
         ]
-        try:
-            self.process = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-            logger.info(f"Streaming RTMP iniciado en {self.url}")
-        except Exception:
-            logger.exception("Error iniciando RTMP FFmpeg")

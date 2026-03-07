@@ -1,7 +1,5 @@
-import logging
 import time
-
-logger = logging.getLogger(__name__)
+from core.logger import logger
 
 class PEIDaemon:
     def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter, db, bot, port="", baudrate=9600):
@@ -27,7 +25,6 @@ class PEIDaemon:
             self.radio = None
 
     def escuchar_pei(self, streamer=None):
-        # Siempre habrá AudioBuffer aquí
         try:
             self.audio_buffer.start_buffer()
             logger.info("AudioBuffer iniciado")
@@ -35,7 +32,7 @@ class PEIDaemon:
             logger.critical(f"No se pudo iniciar AudioBuffer: {e}")
             raise RuntimeError("AudioBuffer no disponible, no se pueden procesar llamadas")
 
-        logger.info("PEI daemon corriendo...")
+        logger.info("PEI corriendo...")
         while True:
             # Simulación de escucha del PEI
             time.sleep(1)
@@ -46,8 +43,12 @@ class PEIDaemon:
                     streamer.send_audio(chunk)
 
     def shutdown(self, streamer=None):
-        logger.info("Cerrando PEI daemon...")
+        logger.info("Apagando PEI...")
         if streamer:
-            streamer.stop()
+            logger.info(f"Deteniendo streaming ({streamer.__class__.__name__})")
+            try:
+                streamer.stop()
+            except Exception as e:
+                logger.error(f"Error al detener el streamer: {e}")
         if self.audio_buffer:
             self.audio_buffer.stop()

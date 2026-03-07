@@ -1,3 +1,7 @@
+logging:
+  level: INFO  # INFO, WARNING, ERROR, CRITICAL
+  console: true # mostrar logs en consola
+
 pei:
   port: "/dev/ttyUSB0"
   baudrate: 9600
@@ -12,7 +16,7 @@ audio:
 streaming:
   enabled: true
   rtmp_url: rtmp://localhost/live/tetra
-  icecast_url: icecast://source:password@localhost:8000/tetra
+#  icecast_url: icecast://source:password@localhost:8000/tetra
 
 stt:
   model: "base"  # tiny/base/medium

@@ -1,30 +1,49 @@
 import subprocess
-import logging
-import numpy as np
+from core import logger
 
-logger = logging.getLogger(__name__)
-
-class BaseAudioStreamer:
-    def __init__(self, samplerate=16000, channels=1):
+class BaseStreamer:
+    def __init__(self, url, samplerate=48000, channels=1):
+        self.url = url
         self.samplerate = samplerate
         self.channels = channels
-        self.process = None
 
-    def start(self):
+        self.process = None
+        self.running = False
+
+    def build_ffmpeg_cmd(self):
         raise NotImplementedError
 
-    def send_audio(self, audio_chunk: np.ndarray):
-        if self.process and self.process.stdin:
-            try:
-                self.process.stdin.write(audio_chunk.astype(np.float32).tobytes())
-            except Exception:
-                logger.exception("Error enviando audio al stream")
+    def start(self):
+        cmd = self.build_ffmpeg_cmd()
+
+        self.process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stderr=subprocess.DEVNULL
+        )
+
+        self.running = True
+        logger.info(f"Streaming iniciado -> {self.url}")
+
+    def write(self, audio):
+        if not self.running or not self.process:
+            return
+
+        try:
+            self.process.stdin.write(audio.tobytes())
+        except Exception as e:
+            logger.error(f"Error enviando audio: {e}")
+            self.restart()
+
+    def restart(self):
+        logger.warning("Reiniciando streamer")
+
+        self.stop()
+        self.start()
 
     def stop(self):
+        self.running = False
+
         if self.process:
-            try:
-                self.process.stdin.close()
-                self.process.wait()
-                logger.info("Stream detenido")
-            except Exception:
-                logger.exception("Error cerrando FFmpeg")
+            self.process.kill()
+            self.process = None
