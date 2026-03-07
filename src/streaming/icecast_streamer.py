@@ -1,7 +1,8 @@
 from streaming.base_streamer import BaseStreamer
 
+
 class IcecastStreamer(BaseStreamer):
-    def build_ffmpeg_cmd(self):
+    def build_ffmpeg_cmd(self) -> list:
         return [
             "ffmpeg",
             "-f", "f32le",

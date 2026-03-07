@@ -2,10 +2,14 @@ import os
 import sys
 import yaml
 import signal
+from dotenv import load_dotenv
+
+# Cargar variables de entorno antes que nada
+load_dotenv()
 
 from core.logger import logger
 from audio.audio_buffer import AudioBuffer
-from api.stt_processor import STTProcessor
+from core.stt_processor import STTProcessor
 from filters.keyword_filter import KeywordFilter
 from integrations.telegram_bot import TelegramBot
 from core.database import Database
@@ -38,12 +42,17 @@ try:
     logger.info("Configuración cargada correctamente")
 except FileNotFoundError:
     logger.critical(f"No se encontró config.yaml en {CONFIG_PATH}")
-    print(f"ERROR: config.yaml no encontrado en {CONFIG_PATH}")
     sys.exit(1)
 except yaml.YAMLError as e:
     logger.critical(f"Error parseando config.yaml: {e}")
-    print(f"ERROR: config.yaml contiene errores de sintaxis YAML")
     sys.exit(1)
+
+# Sobreescribir credenciales con variables de entorno (tienen prioridad)
+cfg["database"]["password"] = os.getenv("DB_PASSWORD", cfg["database"].get("password", ""))
+cfg["database"]["user"]     = os.getenv("DB_USER", cfg["database"].get("user", ""))
+cfg["telegram"]["token"]    = os.getenv("TELEGRAM_TOKEN", cfg["telegram"].get("token", ""))
+cfg["telegram"]["chat_id"]  = os.getenv("TELEGRAM_CHAT_ID", cfg["telegram"].get("chat_id", ""))
+cfg["api"]["jwt_secret"]    = os.getenv("JWT_SECRET", cfg["api"].get("jwt_secret", ""))
 
 # ---------------------------
 # Inicializar componentes
@@ -51,8 +60,6 @@ except yaml.YAMLError as e:
 db = Database(**cfg["database"])
 bot = TelegramBot(cfg["telegram"]["token"], cfg["telegram"]["chat_id"])
 
-# Inicializar AudioBuffer
-audio_buffer = None
 try:
     audio_buffer = AudioBuffer(
         device_index=cfg["audio"].get("device_index", None),
@@ -63,9 +70,7 @@ try:
     )
     logger.info("AudioBuffer inicializado correctamente")
 except Exception as e:
-    audio_buffer = None
     logger.critical(f"No se pudo inicializar AudioBuffer: {e}")
-    print("ERROR: No se detectó micrófono disponible. Conecta un micrófono para procesar llamadas.")
     sys.exit(1)
 
 stt = STTProcessor(
@@ -85,7 +90,7 @@ pei_daemon = PEIDaemon(
     keyword_filter=kf,
     db=db,
     bot=bot,
-    port=cfg["pei"].get("port", ""),  # vacío = detección automática
+    port=cfg["pei"].get("port", ""),
     baudrate=cfg["pei"]["baudrate"]
 )
 
@@ -124,12 +129,8 @@ try:
     pei_daemon.escuchar_pei(streamer)
 except RuntimeError as e:
     logger.critical(f"Error en PEI: {e}")
-    if streamer:
-        logger.warning(f"Streaming detenido porque PEI no está disponible ({streamer.__class__.__name__})")
     sys.exit(1)
 except KeyboardInterrupt:
     logger.info("Interrupción por teclado recibida")
-    if streamer:
-        logger.info(f"Deteniendo streaming ({streamer.__class__.__name__})")
     pei_daemon.shutdown(streamer)
     sys.exit(0)

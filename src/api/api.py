@@ -1,12 +1,19 @@
 import os
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse
-from src.core.database import Database
 import yaml
-from typing import List
+from fastapi import FastAPI, Header, HTTPException, Depends, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from pathlib import Path
+from dotenv import load_dotenv
 
+load_dotenv()
+
+from core.database import Database
+from core.scan_config import scan_config
+from core.logger import logger
+
+# ---------------------------
+# Configuración
+# ---------------------------
 base_dir = os.path.dirname(os.path.abspath(__file__))
 config_path = os.path.join(base_dir, "../config/config.yaml")
 
@@ -14,87 +21,65 @@ try:
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 except FileNotFoundError:
-    raise FileNotFoundError(f"No se encontró el archivo de configuración: {config_path}")
+    raise FileNotFoundError(f"No se encontró config.yaml en {config_path}")
+
+cfg["database"]["password"] = os.getenv("DB_PASSWORD", cfg["database"].get("password", ""))
+cfg["database"]["user"]     = os.getenv("DB_USER", cfg["database"].get("user", ""))
+
+API_KEY = os.getenv("API_KEY")
+if not API_KEY:
+    raise RuntimeError("API_KEY no definida en .env")
 
 db = Database(**cfg["database"])
-app = FastAPI(title="Tetra Monitor API")
+app = FastAPI(title="TETRA Monitor API", version="1.0.0")
 
-SCAN_CONFIG_PATH = Path("config/scan.yaml")
-
-class ScanConfig:
-    def __init__(self):
-        self.gssi = ""
-        self.scan_list: List[str] = []
-        self._load()
-
-    def _load(self):
-        if SCAN_CONFIG_PATH.exists():
-            with open(SCAN_CONFIG_PATH, "r") as f:
-                data = yaml.safe_load(f) or {}
-            self.gssi = data.get("gssi", "")
-            self.scan_list = data.get("scan_list", [])
-        else:
-            self.gssi = ""
-            self.scan_list = []
-
-    def save(self):
-        with open(SCAN_CONFIG_PATH, "w") as f:
-            yaml.safe_dump({
-                "gssi": self.gssi,
-                "scan_list": self.scan_list
-            }, f)
-
-    def update_gssi(self, gssi: str):
-        self.gssi = gssi
-        self.save()
-
-    def update_scan_list(self, scan_list: List[str]):
-        self.scan_list = scan_list
-        self.save()
-
-scan_config = ScanConfig()
-
-API_KEY = "TU_API_KEY_SECRETA"
-
-def verify_api_key(api_key: str):
-    if api_key != API_KEY:
+# ---------------------------
+# Autenticación
+# ---------------------------
+def verify_api_key(x_api_key: str = Header(...)):
+    if x_api_key != API_KEY:
+        logger.warning("Intento de acceso con API key inválida")
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+# ---------------------------
+# Modelos
+# ---------------------------
 class GSSIUpdate(BaseModel):
     gssi: str
 
 class ScanListUpdate(BaseModel):
-    scan_list: List[str]
+    scan_list: str
 
-@app.get("/events")
-def listar_eventos(limit: int = 50):
+# ---------------------------
+# Endpoints
+# ---------------------------
+@app.get("/health")
+def health():
+    """Endpoint público para healthcheck — sin API key"""
+    return {"status": "ok"}
+
+@app.get("/events", dependencies=[Depends(verify_api_key)])
+def listar_eventos(limit: int = Query(default=50, ge=1, le=500)):
     eventos = db.listar_eventos(limit)
-    return JSONResponse(eventos)
+    return JSONResponse([dict(e) for e in eventos])
 
-@app.get("/events/{id}")
-def evento_detalle(id: int):
-    eventos = db.listar_eventos(limit=1000)
-    for e in eventos:
-        if e["id"] == id:
-            return JSONResponse(e)
-    return JSONResponse({"error": "Evento no encontrado"}, status_code=404)
+@app.get("/events/{evento_id}", dependencies=[Depends(verify_api_key)])
+def evento_detalle(evento_id: int):
+    evento = db.obtener_evento(evento_id)
+    if not evento:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    return JSONResponse(evento)
 
-@app.post("/update-gssi")
-def update_gssi(update: GSSIUpdate, x_api_key: str = Header(...)):
-    """Actualiza GSSI y lo guarda en config/scan.yaml"""
-    verify_api_key(x_api_key)
+@app.post("/update-gssi", dependencies=[Depends(verify_api_key)])
+def update_gssi(update: GSSIUpdate):
     scan_config.update_gssi(update.gssi)
     return {"status": "ok", "gssi": scan_config.gssi}
 
-@app.post("/update-scanlist")
-def update_scanlist(update: ScanListUpdate, x_api_key: str = Header(...)):
-    """Actualiza Scan List y la guarda en config/scan.yaml"""
-    verify_api_key(x_api_key)
+@app.post("/update-scanlist", dependencies=[Depends(verify_api_key)])
+def update_scanlist(update: ScanListUpdate):
     scan_config.update_scan_list(update.scan_list)
     return {"status": "ok", "scan_list": scan_config.scan_list}
 
-@app.get("/scan-config")
-def get_scan_config(x_api_key: str = Header(...)):
-    """Obtiene la configuración actual de GSSI y Scan List"""
-    verify_api_key(x_api_key)
+@app.get("/scan-config", dependencies=[Depends(verify_api_key)])
+def get_scan_config():
     return {"gssi": scan_config.gssi, "scan_list": scan_config.scan_list}
