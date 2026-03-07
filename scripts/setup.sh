@@ -42,6 +42,7 @@ fi
 
 sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';" 2>/dev/null || echo "Usuario ${DB_USER} ya existe, continuando..."
 sudo -u postgres psql -c "CREATE DATABASE tetra OWNER ${DB_USER};" 2>/dev/null || echo "Base de datos tetra ya existe, continuando..."
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE tetra TO ${DB_USER};" 2>/dev/null || echo "Privilegios al usuario ya dados, continuando..."
 
 # ---------------------------
 # Crear entorno virtual
