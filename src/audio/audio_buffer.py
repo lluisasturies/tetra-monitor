@@ -5,7 +5,6 @@ import soundfile as sf
 import os
 from core.logger import logger
 
-
 class AudioBuffer:
     def __init__(self, device_index, sample_rate, channels, prebuffer_seconds, output_dir):
         self.device_index = device_index
@@ -13,7 +12,13 @@ class AudioBuffer:
         self.channels = channels
         self.prebuffer_seconds = prebuffer_seconds
         self.output_dir = output_dir
-        self.buffer = queue.Queue(maxsize=prebuffer_seconds * sample_rate)
+
+        # Cola de pre-buffer para grabación — tamaño fijo, descarta el chunk más antiguo si está llena
+        self._record_buffer = queue.Queue(maxsize=prebuffer_seconds * sample_rate)
+
+        # Cola para streaming — sin límite de tamaño, el streamer la drena a su ritmo
+        self._stream_queue = queue.Queue()
+
         self.recording = False
         self.frames = []
         self._stream = None
@@ -23,11 +28,23 @@ class AudioBuffer:
         def callback(indata, frames, time_info, status):
             if status:
                 logger.warning(f"AudioBuffer status: {status}")
-            if self.buffer.full():
-                self.buffer.get()
-            self.buffer.put(indata.copy())
+
+            chunk = indata.copy()
+
+            # Cola de grabación: pre-buffer circular
+            if self._record_buffer.full():
+                self._record_buffer.get_nowait()
+            self._record_buffer.put_nowait(chunk)
+
+            # Cola de streaming: independiente, no afecta a la grabación
+            try:
+                self._stream_queue.put_nowait(chunk)
+            except queue.Full:
+                pass  # Si el streamer no consume, descartamos — mejor perder audio de streaming que bloquear
+
+            # Acumular frames si estamos grabando
             if self.recording:
-                self.frames.append(indata.copy())
+                self.frames.append(chunk)
 
         self._stream = sd.InputStream(
             device=self.device_index,
@@ -39,7 +56,8 @@ class AudioBuffer:
         logger.info("AudioBuffer stream iniciado")
 
     def start_recording(self):
-        self.frames = list(self.buffer.queue)  # pre-buffer
+        # Incluir el pre-buffer completo como inicio de la grabación
+        self.frames = list(self._record_buffer.queue)
         self.recording = True
         logger.info("Grabación iniciada")
 
@@ -62,8 +80,9 @@ class AudioBuffer:
             self.frames = []
 
     def get_chunk(self):
+        """Devuelve el siguiente chunk para el streamer — cola independiente de la grabación."""
         try:
-            return self.buffer.get_nowait()
+            return self._stream_queue.get_nowait()
         except queue.Empty:
             return None
 
