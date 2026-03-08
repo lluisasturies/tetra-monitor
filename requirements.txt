@@ -1,0 +1,25 @@
+# Audio
+sounddevice
+soundfile
+numpy
+
+# STT
+openai-whisper
+
+# Base de datos
+psycopg2-binary
+
+# API
+fastapi
+uvicorn[standard]
+pydantic
+
+# Comunicación serie
+pyserial
+
+# Configuración
+pyyaml
+python-dotenv
+
+# Telegram
+requests

@@ -1,18 +1,46 @@
--- Crear tabla eventos
+-- ================================================
+-- TETRA Monitor — Schema PostgreSQL
+-- Ejecutar como superusuario: sudo -u postgres psql -f schema.sql
+-- ================================================
+
+-- Crear usuario de la app si no existe
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'tetra') THEN
+        CREATE USER tetra WITH PASSWORD 'changeme';
+    END IF;
+END $$;
+
+-- Crear base de datos si no existe
+SELECT 'CREATE DATABASE tetra OWNER tetra'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tetra')\gexec
+
+-- Conectar a la base de datos
+\c tetra
+
+-- Privilegios sobre la base de datos
+GRANT ALL PRIVILEGES ON DATABASE tetra TO tetra;
+GRANT ALL ON SCHEMA public TO tetra;
+
+-- Tabla de eventos
 CREATE TABLE IF NOT EXISTS eventos (
     id          SERIAL PRIMARY KEY,
-    timestamp   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    timestamp   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     grupo       INTEGER NOT NULL,
     ssi         INTEGER NOT NULL,
-    texto       TEXT NOT NULL,
-    ruta_audio  TEXT,
-    -- Columna generada para búsqueda full-text en español
-    texto_ts    tsvector GENERATED ALWAYS AS (to_tsvector('spanish', texto)) STORED
+    texto       TEXT,
+    ruta_audio  TEXT
 );
 
--- Índices para consultas rápidas
-CREATE INDEX IF NOT EXISTS idx_eventos_grupo     ON eventos(grupo);
-CREATE INDEX IF NOT EXISTS idx_eventos_ssi       ON eventos(ssi);
-CREATE INDEX IF NOT EXISTS idx_eventos_timestamp ON eventos(timestamp);
--- Índice GIN para búsqueda full-text
-CREATE INDEX IF NOT EXISTS idx_eventos_texto     ON eventos USING GIN(texto_ts);
+CREATE INDEX IF NOT EXISTS idx_eventos_timestamp ON eventos (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_eventos_grupo     ON eventos (grupo);
+CREATE INDEX IF NOT EXISTS idx_eventos_ssi       ON eventos (ssi);
+
+-- Conceder acceso a tablas y secuencias al usuario de la app
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO tetra;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO tetra;
+
+-- Privilegios por defecto para objetos futuros
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT ALL PRIVILEGES ON TABLES TO tetra;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT ALL PRIVILEGES ON SEQUENCES TO tetra;
