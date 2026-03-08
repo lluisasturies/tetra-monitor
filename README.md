@@ -1,31 +1,26 @@
 # 📡 TETRA Monitor
-
 ```
 ░▀█▀░█▀▀░▀█▀░█▀▄░█▀█░░░░░█▄█░█▀█░█▀█░▀█▀░▀█▀░█▀█░█▀▄
 ░░█░░█▀▀░░█░░█▀▄░█▀█░▄▄▄░█░█░█░█░█░█░░█░░░█░░█░█░█▀▄
 ░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀░▀░▀▀▀░░▀░░▀▀▀░▀░▀
 ```
-
 Sistema de monitorización de redes **TETRA** en tiempo real sobre **Raspberry Pi 5**, con transcripción de voz, filtrado por palabras clave, alertas por Telegram y streaming de audio.
 
 ---
 
 ## ✨ Características
-
 - 📻 **Lectura de radio TETRA** vía interfaz PEI Motorola MTM5400 (comandos AT por serie)
 - 🎙️ **Grabación de audio** con pre-buffer configurable para no perder el inicio de la llamada
 - 🗣️ **Speech-to-Text** con [Whisper](https://github.com/openai/whisper)
 - 🔍 **Filtrado por palabras clave** sobre las transcripciones
-- 📲 **Alertas automáticas por Telegram** cuando se detecta una palabra clave
-- 🗄️ **Almacenamiento en PostgreSQL** de todos los eventos con su transcripción y ruta de audio
+- 🗄️ **Almacenamiento en PostgreSQL** de llamadas filtradas con su transcripción y ruta de audio
+- 📲 **Alertas automáticas por Telegram** cuando se detecta una palabra clave en la llamada
 - 🎧 **Streaming de audio** en tiempo real vía RTMP o Icecast/MP3
 - 🔗 **API REST** (FastAPI) para consultar eventos y gestionar la configuración
-- 📝 **Sistema de logging** con rotación de ficheros y colores en consola
 
 ---
 
 ## 🗂️ Estructura del proyecto
-
 ```
 tetra-monitor/
 ├── src/
@@ -70,7 +65,6 @@ tetra-monitor/
 ---
 
 ## 🛠️ Requisitos
-
 ### Hardware
 - Raspberry Pi 5 (recomendado 4 GB RAM o más)
 - Motorola MTM5400 con cable PEI (RS-232 o USB-serie)
@@ -84,29 +78,19 @@ tetra-monitor/
 ---
 
 ## ⚙️ Instalación
-
 ### 1. Clonar el repositorio
-
 ```bash
 git clone https://github.com/lluisasturies/tetra-monitor.git
 cd tetra-monitor
 ```
 
 ### 2. Instalar dependencias del sistema
-
 ```bash
 chmod +x scripts/setup.sh
 scripts/setup.sh
 ```
 
-### 3. Instalar dependencias Python
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Configurar variables de entorno
-
+### 3. Configurar variables de entorno
 ```bash
 cp .env.example .env
 nano .env
@@ -114,19 +98,7 @@ nano .env
 
 Rellena los valores reales en `.env`:
 
-```env
-DB_USER=piuser
-DB_PASSWORD=tu_password_seguro
-
-TELEGRAM_TOKEN=tu_token_de_bot
-TELEGRAM_CHAT_ID=tu_chat_id
-
-JWT_SECRET=un_secreto_largo_y_aleatorio
-API_KEY=una_clave_larga_y_aleatoria
-```
-
-### 6. Ajustar la configuración
-
+### 4. Ajustar la configuración
 Edita `config/config.yaml` según tu entorno:
 
 ```yaml
@@ -160,14 +132,12 @@ keywords:
 ---
 
 ## ▶️ Arrancar TETRA Monitor
-
 ```bash
 chmod +x scripts/start.sh
 scripts/start.sh
 ```
 
 ### API REST
-
 ```bash
 cd src
 uvicorn api:app --host 0.0.0.0 --port 8000
@@ -176,7 +146,6 @@ uvicorn api:app --host 0.0.0.0 --port 8000
 Documentación interactiva disponible en `http://localhost:8000/docs`.
 
 ### Ejecutar como servicio systemd (recomendado para producción)
-
 ```bash
 sudo nano /etc/systemd/system/tetra-monitor.service
 ```
@@ -207,7 +176,6 @@ sudo systemctl start tetra-monitor
 ---
 
 ## 🔗 API REST
-
 Todos los endpoints (excepto `/health`) requieren la cabecera `x-api-key`.
 
 | Método | Endpoint | Descripción |
@@ -228,7 +196,6 @@ curl -H "x-api-key: tu_api_key" http://localhost:8000/events?limit=10
 ---
 
 ## 🎤 Identificar el micrófono
-
 Si no sabes el `device_index` de tu micrófono:
 
 ```python
@@ -241,13 +208,12 @@ Busca tu dispositivo en la lista y usa su índice en `config.yaml`.
 ---
 
 ## 📋 Logs
-
 Los logs se guardan en `logs/` con rotación automática (10 MB por fichero, 10 copias):
 
 | Fichero | Contenido |
 |---|---|
 | `logs/tetra_monitor.log` | Log general de la aplicación |
-| `logs/calls.log` | Registro de llamadas procesadas |
+| `logs/calls.log` | Registro de llamadas |
 
 El nivel de log se configura en `config.yaml`:
 
@@ -258,38 +224,7 @@ logging:
 
 ---
 
-## 🏗️ Arquitectura
-
-```
-Motorola MTM5400
-       │ (PEI / RS-232)
-       ▼
-  pei_daemon.py ─────────────────────────────────────────┐
-       │                                                  │
-       ├─ PTT_START → audio_buffer.start_recording()      │
-       │                                                  │
-       └─ PTT_END  → audio_buffer.stop_recording()        │
-                          │                        streaming
-                          ▼                   (RTMP / Icecast)
-                   stt_processor.transcribe()
-                          │
-                          ▼
-                   keyword_filter.contiene_evento()
-                     │             │
-                    NO            SÍ
-                     │             ├─ database.guardar_evento()
-                     │             └─ telegram_bot.enviar_alerta()
-                     │
-                  (descarta)
-
-API REST (FastAPI) ──── database.listar_eventos()
-                   └─── scan_config.update_gssi()
-```
-
----
-
 ## 🔒 Seguridad
-
 - Las credenciales se gestionan exclusivamente mediante variables de entorno (`.env`)
 - La API REST requiere `x-api-key` en todas las peticiones (excepto `/health`)
 - Para streaming remoto, usa siempre **RTMPS** o **HTTPS/WSS** para Icecast
@@ -297,5 +232,4 @@ API REST (FastAPI) ──── database.listar_eventos()
 ---
 
 ## 📄 Licencia
-
 Apache 2.0 — © 2026 Lluis de la Rubia / LluisAsturies
