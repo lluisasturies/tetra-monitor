@@ -31,18 +31,19 @@ tetra-monitor/
 ├── logs/                    # Logs de la aplicación
 ├── scripts/
 │   ├── setup.sh             # Instalación completa
-│   └── start.sh             # Arranque del daemon
+│   ├── start.sh             # Arranque del daemon
+│   └── tetra-monitor.service # Unit file para systemd
 └── src/
     ├── main.py              # Punto de entrada
     ├── api/
     │   └── api.py           # API REST (FastAPI)
     ├── audio/
-    │   └── audio_buffer.py  # Captura y grabación de audio
+    │   ├── audio_buffer.py  # Captura y grabación de audio
+    │   └── audio_cleanup.py # Limpieza automática de ficheros FLAC
     ├── core/
     │   ├── database.py      # Conexión y queries PostgreSQL
     │   ├── logger.py        # Logger centralizado
     │   ├── scan_config.py   # Config de scan dinámica (mtime IPC)
-    │   ├── scan_config.py   # Config de scan dinámica
     │   └── stt_processor.py # Transcripción con Whisper
     ├── filters/
     │   └── keyword_filter.py # Filtrado por palabras clave
@@ -92,7 +93,7 @@ API_KEY=your_api_key
 ```
 
 ### 3. Ejecutar el setup
-El script instala automáticamente Python, PostgreSQL, ffmpeg, las dependencias Python y aplica el schema de base de datos:
+El script instala automáticamente Python, PostgreSQL, ffmpeg, las dependencias Python, pre-descarga el modelo Whisper y aplica el schema de base de datos:
 ```bash
 sudo bash scripts/setup.sh
 ```
@@ -109,6 +110,28 @@ La API REST corre por separado (proceso independiente):
 cd src
 uvicorn api.api:app --host 0.0.0.0 --port 8000
 ```
+
+---
+
+## Systemd (producción)
+Para que el daemon arranque automáticamente con la RPi y se reinicie si falla:
+
+```bash
+sudo cp scripts/tetra-monitor.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable tetra-monitor
+sudo systemctl start tetra-monitor
+```
+
+Comandos útiles:
+```bash
+sudo systemctl status tetra-monitor   # estado del servicio
+sudo systemctl restart tetra-monitor  # reiniciar
+sudo systemctl stop tetra-monitor     # parar
+journalctl -u tetra-monitor -f        # logs en tiempo real
+```
+
+> **Nota:** Edita `tetra-monitor.service` y ajusta `User` y `WorkingDirectory` si tu usuario o ruta de instalación no son los predeterminados (`pi` / `/home/pi/tetra-monitor`).
 
 ---
 
