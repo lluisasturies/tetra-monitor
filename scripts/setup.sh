@@ -6,6 +6,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV_PATH="$PROJECT_ROOT/venv"
 REQUIREMENTS="$PROJECT_ROOT/requirements.txt"
 SCHEMA="$PROJECT_ROOT/data/db/schema.sql"
+CONFIG="$PROJECT_ROOT/config/config.yaml"
 
 echo "==============================="
 echo "  TETRA Monitor — Setup"
@@ -96,6 +97,26 @@ echo "Instalando dependencias desde requirements.txt..."
 pip install --upgrade pip --quiet
 pip install -r "$REQUIREMENTS"
 echo "Dependencias instaladas correctamente"
+
+# ---------------------------
+# Pre-descargar modelo Whisper
+# ---------------------------
+WHISPER_MODEL="base"
+if [ -f "$CONFIG" ] && command -v python3 &> /dev/null; then
+    WHISPER_MODEL=$(python3 -c "
+import yaml, sys
+try:
+    cfg = yaml.safe_load(open('$CONFIG'))
+    print(cfg.get('stt', {}).get('model', 'base'))
+except Exception:
+    print('base')
+")
+fi
+
+echo "Pre-descargando modelo Whisper '$WHISPER_MODEL'..."
+python3 -c "import whisper; whisper.load_model('$WHISPER_MODEL')" \
+    && echo "Modelo Whisper '$WHISPER_MODEL' listo" \
+    || echo "AVISO: No se pudo pre-descargar el modelo Whisper — se descargará al arrancar."
 
 # ---------------------------
 # Comprobar .env
