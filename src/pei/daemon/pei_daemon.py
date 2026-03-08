@@ -1,10 +1,15 @@
 import time
+from concurrent.futures import ThreadPoolExecutor
 from core.logger import logger
 from core.scan_config import scan_config
 from pei.models.pei_event import PEIEvent
 
 # Cada cuántos segundos el daemon comprueba si cambió el scan config
 SCAN_CONFIG_CHECK_INTERVAL = 5
+
+# Número máximo de transcripciones en paralelo
+# En RPi con Whisper base, 1 es lo razonable para no saturar la CPU
+STT_MAX_WORKERS = 1
 
 class PEIDaemon:
     def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter, db, bot, port="", baudrate=9600):
@@ -20,6 +25,7 @@ class PEIDaemon:
         self._last_config_check = 0.0
         self._current_grupo = 0
         self._current_ssi = 0
+        self._executor = ThreadPoolExecutor(max_workers=STT_MAX_WORKERS)
         self._init_radio()
 
     def _init_radio(self):
@@ -64,9 +70,20 @@ class PEIDaemon:
                 if scan_config.scan_list:
                     self.radio.set_scan_list(scan_config.scan_list)
 
+    def _process_audio(self, path: str, grupo: int, ssi: int):
+        """Corre en un hilo del executor — no bloquea el bucle PEI."""
+        try:
+            texto = self.stt_processor.transcribe(path)
+            logger.info(f"Transcripción (grupo={grupo}, ssi={ssi}): {texto}")
+
+            if self.keyword_filter.contiene_evento(texto):
+                self.db.guardar_evento(grupo, ssi, texto, path)
+                self.bot.enviar_alerta(grupo, ssi, texto)
+        except Exception as e:
+            logger.error(f"Error en transcripción async (grupo={grupo}, ssi={ssi}): {e}")
+
     def _handle_event(self, event: PEIEvent):
         if event.type == "PTT_START":
-            # El grupo y SSI los habremos capturado en CALL_START (+CTICN)
             logger.info(f"PTT START — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
             self.audio_buffer.start_recording()
 
@@ -76,12 +93,11 @@ class PEIDaemon:
             path = self.audio_buffer.stop_recording(filename)
 
             if path:
-                texto = self.stt_processor.transcribe(path)
-                logger.info(f"Transcripción: {texto}")
-
-                if self.keyword_filter.contiene_evento(texto):
-                    self.db.guardar_evento(self._current_grupo, self._current_ssi, texto, path)
-                    self.bot.enviar_alerta(self._current_grupo, self._current_ssi, texto)
+                # Lanzar la transcripción en un hilo separado — el bucle PEI no espera
+                grupo = self._current_grupo
+                ssi = self._current_ssi
+                self._executor.submit(self._process_audio, path, grupo, ssi)
+                logger.debug(f"Transcripción encolada para {path}")
 
         elif event.type == "CALL_START":
             # +CTICN nos da el GSSI y SSI — los guardamos para usarlos en PTT
@@ -140,6 +156,11 @@ class PEIDaemon:
 
     def shutdown(self, streamer=None):
         logger.info("Apagando PEI...")
+
+        # Esperar a que terminen las transcripciones en curso antes de cerrar
+        logger.info("Esperando transcripciones pendientes...")
+        self._executor.shutdown(wait=True)
+
         if streamer:
             logger.info(f"Deteniendo streaming ({streamer.__class__.__name__})")
             try:
