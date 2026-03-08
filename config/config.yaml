@@ -11,7 +11,7 @@ audio:
   sample_rate: 16000
   channels: 1
   prebuffer_seconds: 5
-  output_dir: "./data/audio"
+  output_dir: "../data/audio"
 
 streaming:
   enabled: true
