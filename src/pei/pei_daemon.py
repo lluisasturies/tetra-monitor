@@ -1,5 +1,9 @@
 import time
 from core.logger import logger
+from core.scan_config import scan_config
+
+# Cada cuántos segundos el daemon comprueba si cambió el scan config
+SCAN_CONFIG_CHECK_INTERVAL = 5
 
 class PEIDaemon:
     def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter, db, bot, port="", baudrate=9600):
@@ -12,6 +16,7 @@ class PEIDaemon:
         self.port = port
         self.baudrate = baudrate
         self.radio = None
+        self._last_config_check = 0.0
         self._init_radio()
 
     def _init_radio(self):
@@ -19,6 +24,11 @@ class PEIDaemon:
         try:
             self.radio = self.motorola_pei_cls(puerto, self.baudrate)
             logger.info(f"Motorola PEI inicializado en {puerto}")
+            # Aplicar configuración inicial si existe
+            if scan_config.gssi:
+                self.radio.set_active_gssi(scan_config.gssi)
+            if scan_config.scan_list:
+                self.radio.set_scan_list(scan_config.scan_list)
         except Exception as e:
             logger.critical(f"No se pudo inicializar PEI en {puerto}: {e}")
             self.radio = None
@@ -38,6 +48,20 @@ class PEIDaemon:
         except Exception as e:
             logger.error(f"[PEI] Reconexión fallida: {e}")
 
+    def _check_scan_config(self):
+        """Comprueba si el config cambió en disco y aplica los cambios a la radio."""
+        now = time.monotonic()
+        if now - self._last_config_check < SCAN_CONFIG_CHECK_INTERVAL:
+            return
+        self._last_config_check = now
+        if scan_config.reload_if_changed():
+            logger.info("[PEI] Aplicando nuevo scan config a la radio")
+            if self.radio:
+                if scan_config.gssi:
+                    self.radio.set_active_gssi(scan_config.gssi)
+                if scan_config.scan_list:
+                    self.radio.set_scan_list(scan_config.scan_list)
+
     def escuchar_pei(self, streamer=None):
         try:
             self.audio_buffer.start_buffer()
@@ -50,11 +74,13 @@ class PEIDaemon:
 
         while True:
             try:
-                # Si la radio no está disponible, intentar reconectar
                 if self.radio is None:
                     self._reconnect_radio()
                     time.sleep(2)
                     continue
+
+                # Comprobar si la API actualizó el scan config en disco
+                self._check_scan_config()
 
                 event = self.radio.read_event()
 
@@ -82,7 +108,6 @@ class PEIDaemon:
                     elif event.type == "CALL_END":
                         logger.info("CALL END")
 
-                # Enviar audio al streamer si existe
                 if streamer:
                     chunk = self.audio_buffer.get_chunk()
                     if chunk is not None:
@@ -91,7 +116,6 @@ class PEIDaemon:
                 time.sleep(0.05)
 
             except OSError as e:
-                # Error de puerto serie — probablemente la radio se desconectó
                 logger.error(f"[PEI] Error de puerto serie: {e}. Intentando reconectar...")
                 self._reconnect_radio()
 
