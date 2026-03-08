@@ -12,6 +12,7 @@ audio:
   channels: 1
   prebuffer_seconds: 5
   output_dir: "../data/audio"
+  retention_days: 7   # ficheros .flac más antiguos que esto se borran automáticamente
 
 streaming:
   enabled: true

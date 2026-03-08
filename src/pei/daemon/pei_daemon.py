@@ -2,6 +2,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from core.logger import logger
 from core.scan_config import scan_config
+from audio.audio_cleanup import AudioCleanup
 from pei.models.pei_event import PEIEvent
 
 # Cada cuántos segundos el daemon comprueba si cambió el scan config
@@ -12,7 +13,8 @@ SCAN_CONFIG_CHECK_INTERVAL = 5
 STT_MAX_WORKERS = 1
 
 class PEIDaemon:
-    def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter, db, bot, port="", baudrate=9600):
+    def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter, db, bot,
+                 port="", baudrate=9600, audio_output_dir="", retention_days=7):
         self.motorola_pei_cls = motorola_pei_cls
         self.audio_buffer = audio_buffer
         self.stt_processor = stt_processor
@@ -26,6 +28,7 @@ class PEIDaemon:
         self._current_grupo = 0
         self._current_ssi = 0
         self._executor = ThreadPoolExecutor(max_workers=STT_MAX_WORKERS)
+        self._cleanup = AudioCleanup(audio_output_dir, retention_days)
         self._init_radio()
 
     def _init_radio(self):
@@ -93,14 +96,12 @@ class PEIDaemon:
             path = self.audio_buffer.stop_recording(filename)
 
             if path:
-                # Lanzar la transcripción en un hilo separado — el bucle PEI no espera
                 grupo = self._current_grupo
                 ssi = self._current_ssi
                 self._executor.submit(self._process_audio, path, grupo, ssi)
                 logger.debug(f"Transcripción encolada para {path}")
 
         elif event.type == "CALL_START":
-            # +CTICN nos da el GSSI y SSI — los guardamos para usarlos en PTT
             self._current_grupo = event.grupo
             self._current_ssi = event.ssi
             logger.info(f"CALL START — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
@@ -134,6 +135,7 @@ class PEIDaemon:
                     continue
 
                 self._check_scan_config()
+                self._cleanup.run_if_due()
 
                 event = self.radio.read_event()
                 if event:
@@ -157,7 +159,6 @@ class PEIDaemon:
     def shutdown(self, streamer=None):
         logger.info("Apagando PEI...")
 
-        # Esperar a que terminen las transcripciones en curso antes de cerrar
         logger.info("Esperando transcripciones pendientes...")
         self._executor.shutdown(wait=True)
 

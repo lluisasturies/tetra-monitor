@@ -47,6 +47,7 @@ except yaml.YAMLError as e:
     sys.exit(1)
 
 AUDIO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, cfg["audio"].get("output_dir", "data/audio"))
+RETENTION_DAYS = cfg["audio"].get("retention_days", 7)
 
 # Sobreescribir credenciales con variables de entorno (tienen prioridad)
 cfg["database"]["password"] = os.getenv("DB_PASSWORD", cfg["database"].get("password", ""))
@@ -92,7 +93,9 @@ pei_daemon = PEIDaemon(
     db=db,
     bot=bot,
     port=cfg["pei"].get("port", ""),
-    baudrate=cfg["pei"]["baudrate"]
+    baudrate=cfg["pei"]["baudrate"],
+    audio_output_dir=AUDIO_OUTPUT_DIR,
+    retention_days=RETENTION_DAYS
 )
 
 # ---------------------------
