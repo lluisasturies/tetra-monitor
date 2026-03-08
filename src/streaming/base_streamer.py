@@ -1,7 +1,6 @@
 import subprocess
 from core.logger import logger
 
-
 class BaseStreamer:
     def __init__(self, url: str, samplerate: int = 48000, channels: int = 1):
         self.url = url

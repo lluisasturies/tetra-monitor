@@ -61,28 +61,50 @@ class MotorolaPEI:
             return None
 
     def _parse_event(self, line: str):
-        """Parsea una línea PEI y devuelve un objeto evento o None."""
-        # Ejemplo de tramas esperadas (ajustar según protocolo real del MTM5400):
-        # PTT_START: "+CTSDSR: 1,<grupo>,<ssi>"
-        # PTT_END:   "+CTSDSR: 0,<grupo>,<ssi>"
+        class Event:
+            pass
+
+        # PTT START / END: +CTSDSR: <estado>,<grupo>,<ssi>
         if "+CTSDSR:" in line:
             try:
                 parts = line.split(":")[1].strip().split(",")
                 estado = parts[0].strip()
                 grupo = int(parts[1].strip())
                 ssi = int(parts[2].strip())
-
-                class Event:
-                    pass
-
                 ev = Event()
                 ev.grupo = grupo
                 ev.ssi = ssi
                 ev.type = "PTT_START" if estado == "1" else "PTT_END"
                 return ev
             except (IndexError, ValueError) as e:
-                logger.warning(f"[PEI] No se pudo parsear trama: '{line}' — {e}")
+                logger.warning(f"[PEI] No se pudo parsear +CTSDSR: '{line}' — {e}")
                 return None
+
+        # Llamada entrante: +CTICN
+        if "+CTICN:" in line:
+            try:
+                parts = line.split(":")[1].strip().split(",")
+                ev = Event()
+                ev.type = "CALL_START"
+                ev.grupo = int(parts[0].strip())
+                ev.ssi = int(parts[1].strip()) if len(parts) > 1 else 0
+                return ev
+            except (IndexError, ValueError) as e:
+                logger.warning(f"[PEI] No se pudo parsear +CTICN: '{line}' — {e}")
+                return None
+
+        # Fin de llamada: +CTCC
+        if "+CTCC:" in line:
+            try:
+                ev = Event()
+                ev.type = "CALL_END"
+                ev.grupo = 0
+                ev.ssi = 0
+                return ev
+            except Exception as e:
+                logger.warning(f"[PEI] No se pudo parsear +CTCC: '{line}' — {e}")
+                return None
+
         return None
 
     def close(self):
