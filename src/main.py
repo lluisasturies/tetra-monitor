@@ -31,7 +31,6 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 KEYWORDS_PATH = os.path.join(PROJECT_ROOT, "config", "keywords.yaml")
 LOG_DIR = os.path.join(PROJECT_ROOT, "logs")
-AUDIO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, cfg["audio"].get("output_dir", "data/audio"))
 
 # ---------------------------
 # Cargar configuración
@@ -46,6 +45,8 @@ except FileNotFoundError:
 except yaml.YAMLError as e:
     logger.critical(f"Error parseando config.yaml: {e}")
     sys.exit(1)
+
+AUDIO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, cfg["audio"].get("output_dir", "data/audio"))
 
 # Sobreescribir credenciales con variables de entorno (tienen prioridad)
 cfg["database"]["password"] = os.getenv("DB_PASSWORD", cfg["database"].get("password", ""))
