@@ -1,6 +1,7 @@
 import time
 from core.logger import logger
 from core.scan_config import scan_config
+from pei.models.pei_event import PEIEvent
 
 # Cada cuántos segundos el daemon comprueba si cambió el scan config
 SCAN_CONFIG_CHECK_INTERVAL = 5
@@ -17,6 +18,8 @@ class PEIDaemon:
         self.baudrate = baudrate
         self.radio = None
         self._last_config_check = 0.0
+        self._current_grupo = 0
+        self._current_ssi = 0
         self._init_radio()
 
     def _init_radio(self):
@@ -24,7 +27,6 @@ class PEIDaemon:
         try:
             self.radio = self.motorola_pei_cls(puerto, self.baudrate)
             logger.info(f"Motorola PEI inicializado en {puerto}")
-            # Aplicar configuración inicial si existe
             if scan_config.gssi:
                 self.radio.set_active_gssi(scan_config.gssi)
             if scan_config.scan_list:
@@ -62,6 +64,42 @@ class PEIDaemon:
                 if scan_config.scan_list:
                     self.radio.set_scan_list(scan_config.scan_list)
 
+    def _handle_event(self, event: PEIEvent):
+        if event.type == "PTT_START":
+            # El grupo y SSI los habremos capturado en CALL_START (+CTICN)
+            logger.info(f"PTT START — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
+            self.audio_buffer.start_recording()
+
+        elif event.type == "PTT_END":
+            logger.info(f"PTT END — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
+            filename = f"{self._current_grupo}_{self._current_ssi}_{int(time.time())}.flac"
+            path = self.audio_buffer.stop_recording(filename)
+
+            if path:
+                texto = self.stt_processor.transcribe(path)
+                logger.info(f"Transcripción: {texto}")
+
+                if self.keyword_filter.contiene_evento(texto):
+                    self.db.guardar_evento(self._current_grupo, self._current_ssi, texto, path)
+                    self.bot.enviar_alerta(self._current_grupo, self._current_ssi, texto)
+
+        elif event.type == "CALL_START":
+            # +CTICN nos da el GSSI y SSI — los guardamos para usarlos en PTT
+            self._current_grupo = event.grupo
+            self._current_ssi = event.ssi
+            logger.info(f"CALL START — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
+
+        elif event.type == "CALL_CONNECTED":
+            logger.info(f"CALL CONNECTED — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
+
+        elif event.type == "CALL_END":
+            logger.info(f"CALL END — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
+            self._current_grupo = 0
+            self._current_ssi = 0
+
+        elif event.type == "TX_DEMAND":
+            logger.debug("[PEI] TX_DEMAND recibido (radio transmitiendo)")
+
     def escuchar_pei(self, streamer=None):
         try:
             self.audio_buffer.start_buffer()
@@ -79,34 +117,11 @@ class PEIDaemon:
                     time.sleep(2)
                     continue
 
-                # Comprobar si la API actualizó el scan config en disco
                 self._check_scan_config()
 
                 event = self.radio.read_event()
-
                 if event:
-                    if event.type == "PTT_START":
-                        logger.info(f"PTT START — Grupo: {event.grupo}, SSI: {event.ssi}")
-                        self.audio_buffer.start_recording()
-
-                    elif event.type == "PTT_END":
-                        logger.info(f"PTT END — Grupo: {event.grupo}, SSI: {event.ssi}")
-                        filename = f"{event.grupo}_{event.ssi}_{int(time.time())}.flac"
-                        path = self.audio_buffer.stop_recording(filename)
-
-                        if path:
-                            texto = self.stt_processor.transcribe(path)
-                            logger.info(f"Transcripción: {texto}")
-
-                            if self.keyword_filter.contiene_evento(texto):
-                                self.db.guardar_evento(event.grupo, event.ssi, texto, path)
-                                self.bot.enviar_alerta(event.grupo, event.ssi, texto)
-
-                    elif event.type == "CALL_START":
-                        logger.info(f"CALL START — Grupo: {event.grupo}, SSI: {event.ssi}")
-
-                    elif event.type == "CALL_END":
-                        logger.info("CALL END")
+                    self._handle_event(event)
 
                 if streamer:
                     chunk = self.audio_buffer.get_chunk()

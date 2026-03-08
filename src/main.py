@@ -13,8 +13,8 @@ from core.stt_processor import STTProcessor
 from filters.keyword_filter import KeywordFilter
 from integrations.telegram_bot import TelegramBot
 from core.database import Database
-from pei.pei_motorola import MotorolaPEI
-from pei.pei_daemon import PEIDaemon
+from pei.hardware.pei_motorola import MotorolaPEI
+from pei.daemon.pei_daemon import PEIDaemon
 from streaming import create_streamer
 
 print()
