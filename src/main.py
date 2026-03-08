@@ -31,7 +31,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 KEYWORDS_PATH = os.path.join(PROJECT_ROOT, "config", "keywords.yaml")
 LOG_DIR = os.path.join(PROJECT_ROOT, "logs")
-AUDIO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "audio_output")
+AUDIO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, cfg["audio"].get("output_dir", "data/audio"))
 
 # ---------------------------
 # Cargar configuración
