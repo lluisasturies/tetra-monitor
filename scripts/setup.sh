@@ -147,12 +147,15 @@ else
     sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='tetra'" | grep -q 1 || \
         sudo -u postgres psql -c "CREATE DATABASE tetra OWNER $DB_USER;"
 
-    # Aplicar schema
+    # Aplicar schema — copiar a /tmp para que postgres pueda leerlo
     if [ ! -f "$SCHEMA" ]; then
         echo "ERROR: No se encontró schema.sql en $SCHEMA"
         exit 1
     fi
-    sudo -u postgres psql -d tetra -f "$SCHEMA"
+    cp "$SCHEMA" /tmp/tetra_schema.sql
+    chmod 644 /tmp/tetra_schema.sql
+    sudo -u postgres psql -d tetra -f /tmp/tetra_schema.sql
+    rm -f /tmp/tetra_schema.sql
     echo "Base de datos configurada correctamente"
 fi
 
