@@ -3,10 +3,11 @@ from core.logger import logger
 
 
 class BaseStreamer:
-    def __init__(self, url: str, samplerate: int = 48000, channels: int = 1):
+    def __init__(self, url: str, samplerate: int = 16000, channels: int = 1, bitrate: str = "128k"):
         self.url = url
         self.samplerate = samplerate
         self.channels = channels
+        self.bitrate = bitrate
         self.process = None
         self.running = False
         self.start()
