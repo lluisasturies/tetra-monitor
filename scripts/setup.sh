@@ -123,16 +123,16 @@ echo "Modelo Whisper '$WHISPER_MODEL' descargado"
 # ---------------------------
 mkdir -p "$PROJECT_ROOT/data/audio"
 mkdir -p "$PROJECT_ROOT/logs"
-echo "Directorios creados: data/audio, logs"
+echo "Directorios creados (data/audio, logs)"
 
 # ---------------------------
 # Configurar PostgreSQL
 # ---------------------------
 if [ ! -f "$ENV_FILE" ]; then
     echo ""
-    echo "AVISO: No se encontró .env — omitiendo configuración de BD"
-    echo "       Copia .env.example a .env y ejecuta manualmente:"
-    echo "       sudo -u postgres psql -d tetra -f data/db/schema.sql"
+    echo "AVISO: No se encontró .env — omitiendo configuración de BD."
+    echo "       Copia .env.example a .env, rellena las credenciales y vuelve a ejecutar:"
+    echo "       sudo bash scripts/setup.sh"
 else
     set -a; source "$ENV_FILE"; set +a
     echo "Configurando PostgreSQL (usuario: $DB_USER, BD: tetra)..."
@@ -146,6 +146,10 @@ else
         sudo -u postgres psql -c "CREATE DATABASE tetra OWNER $DB_USER;"
 
     # Aplicar schema
+    if [ ! -f "$SCHEMA" ]; then
+        echo "ERROR: No se encontró schema.sql en $SCHEMA"
+        exit 1
+    fi
     sudo -u postgres psql -d tetra -f "$SCHEMA"
     echo "Base de datos configurada correctamente"
 fi
@@ -159,11 +163,6 @@ echo "  Setup completado"
 echo "==============================="
 echo ""
 echo "Pasos siguientes:"
-if [ ! -f "$ENV_FILE" ]; then
-    echo "  1. Copia .env.example a .env y rellena tus credenciales"
-    echo "  2. Ejecuta de nuevo: sudo bash scripts/setup.sh  (para configurar la BD)"
-    echo "  3. Arranca con: make start  o  bash scripts/start.sh"
-else
-    echo "  1. Arranca con: make start  o  bash scripts/start.sh"
-fi
+echo "  1. Si no lo has hecho: copia .env.example a .env y rellena tus credenciales"
+echo "  2. Arranca con:  make start   o   bash scripts/start.sh"
 echo ""
