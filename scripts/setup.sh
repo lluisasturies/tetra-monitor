@@ -8,6 +8,7 @@ REQUIREMENTS="$PROJECT_ROOT/requirements.txt"
 SCHEMA="$PROJECT_ROOT/data/db/schema.sql"
 CONFIG="$PROJECT_ROOT/config/config.yaml"
 ENV_FILE="$PROJECT_ROOT/.env"
+REAL_USER="${SUDO_USER:-$USER}"
 
 echo "==============================="
 echo "  TETRA Monitor — Setup"
@@ -121,11 +122,13 @@ python3 -c "import whisper; whisper.load_model('$WHISPER_MODEL')"
 echo "Modelo Whisper '$WHISPER_MODEL' descargado"
 
 # ---------------------------
-# Crear directorios necesarios
+# Crear directorios necesarios y fijar permisos
 # ---------------------------
 mkdir -p "$PROJECT_ROOT/data/audio"
 mkdir -p "$PROJECT_ROOT/logs"
-echo "Directorios creados (data/audio, logs)"
+chown -R "$REAL_USER:$REAL_USER" "$PROJECT_ROOT/data"
+chown -R "$REAL_USER:$REAL_USER" "$PROJECT_ROOT/logs"
+echo "Directorios creados (data/audio, logs) con permisos para '$REAL_USER'"
 
 # ---------------------------
 # Configurar PostgreSQL
