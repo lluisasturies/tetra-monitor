@@ -23,14 +23,22 @@ try:
 except FileNotFoundError:
     raise FileNotFoundError(f"No se encontró config.yaml en {config_path}")
 
-cfg["database"]["password"] = os.getenv("DB_PASSWORD", cfg["database"].get("password", ""))
-cfg["database"]["user"]     = os.getenv("DB_USER", cfg["database"].get("user", ""))
+# Leer credenciales exclusivamente desde .env
+DB_USER     = os.getenv("DB_USER", "")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+API_KEY     = os.getenv("API_KEY")
 
-API_KEY = os.getenv("API_KEY")
 if not API_KEY:
     raise RuntimeError("API_KEY no definida en .env")
 
-db = Database(**cfg["database"])
+db = Database(
+    host=cfg["database"]["host"],
+    port=cfg["database"]["port"],
+    dbname=cfg["database"]["dbname"],
+    user=DB_USER,
+    password=DB_PASSWORD,
+)
+
 app = FastAPI(title="TETRA Monitor API", version="1.0.0")
 
 # ---------------------------
