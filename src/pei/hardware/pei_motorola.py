@@ -1,7 +1,13 @@
+import re
 import serial
 import time
 from core.logger import logger
 from pei.models.pei_event import PEIEvent
+
+# Patrones permitidos para comandos AT
+_RE_GSSI      = re.compile(r'^\d{1,8}$')           # solo dígitos, máx 8
+_RE_SCAN_LIST = re.compile(r'^[\w\-]{1,32}$')       # alfanumérico y guión, máx 32
+
 
 class MotorolaPEI:
     def __init__(self, port: str, baud: int = 9600):
@@ -28,6 +34,9 @@ class MotorolaPEI:
             return ""
 
     def set_active_gssi(self, gssi: str):
+        if not _RE_GSSI.match(gssi):
+            logger.error(f"[PEI] GSSI rechazado por formato inválido: '{gssi}'")
+            return
         now = time.time()
         if gssi == self.current_gssi:
             logger.debug(f"[PEI] GSSI {gssi} ya activo, sin cambios")
@@ -43,6 +52,9 @@ class MotorolaPEI:
         self.last_switch = now
 
     def set_scan_list(self, scan_list: str):
+        if not _RE_SCAN_LIST.match(scan_list):
+            logger.error(f"[PEI] Scan list rechazada por formato inválido: '{scan_list}'")
+            return
         cmd = f"AT+CGSSI={scan_list}"
         logger.info(f"[PEI] Cambiando Scan List -> {scan_list}")
         resp = self.send(cmd)
@@ -88,9 +100,6 @@ class MotorolaPEI:
         #         <called_party_identity>,<called_party_identity_type>,
         #         [<called_party_ssi>],[<calling_party_ssi>],...
         # Incoming Call Notification — llamada entrante con GSSI y SSI.
-        # NOTA: los índices 3 y 6 son los habituales para MTM5400 pero
-        # conviene verificarlos con logs reales del puerto serie, ya que
-        # dependen del perfil +CTSDC configurado en la radio.
         # ---------------------------------------------------------------
         if "+CTICN:" in line:
             try:

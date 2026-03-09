@@ -1,6 +1,10 @@
+import re
 import yaml
 from pathlib import Path
 from core.logger import logger
+
+_RE_GSSI      = re.compile(r'^\d{1,8}$')
+_RE_SCAN_LIST = re.compile(r'^[\w\-]{1,32}$')
 
 
 class ScanConfig:
@@ -17,10 +21,10 @@ class ScanConfig:
                 with open(self._filepath, "r") as f:
                     data = yaml.safe_load(f) or {}
                 scan = data.get("scan", {})
-                self.gssi = scan.get("gssi", "")
+                self.gssi      = scan.get("gssi", "")
                 self.scan_list = scan.get("scan_list", "")
                 self._last_mtime = self._filepath.stat().st_mtime
-                logger.info("Scan config cargada correctamente")
+                logger.info("Scan config leída desde disco")
             except yaml.YAMLError as e:
                 logger.error(f"Error leyendo scan config: {e}")
                 self.gssi = ""
@@ -59,11 +63,15 @@ class ScanConfig:
             logger.error(f"No se pudo guardar scan config: {e}")
 
     def update_gssi(self, gssi: str):
+        if not _RE_GSSI.match(gssi):
+            raise ValueError(f"Formato de GSSI inválido: '{gssi}' (solo dígitos, máx 8)")
         logger.info(f"Actualizando GSSI a: {gssi}")
         self.gssi = gssi
         self.save()
 
     def update_scan_list(self, scan_list: str = ""):
+        if scan_list and not _RE_SCAN_LIST.match(scan_list):
+            raise ValueError(f"Formato de scan list inválido: '{scan_list}' (alfanumérico y guión, máx 32)")
         logger.info(f"Actualizando scan list a: {scan_list}")
         self.scan_list = scan_list
         self.save()
