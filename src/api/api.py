@@ -1,5 +1,6 @@
 import os
 import secrets
+import bcrypt
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse
@@ -7,7 +8,6 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -19,7 +19,7 @@ from app_state import app_state
 
 JWT_SECRET        = os.getenv("JWT_SECRET")
 API_USER          = os.getenv("API_USER")
-API_PASSWORD_HASH = os.getenv("API_PASSWORD_HASH")
+API_PASSWORD_HASH = os.getenv("API_PASSWORD_HASH", "").encode()
 
 if not JWT_SECRET:
     raise RuntimeError("JWT_SECRET no definido en .env")
@@ -30,8 +30,6 @@ JWT_ALGORITHM      = "HS256"
 ACCESS_TOKEN_HOURS = 1
 REFRESH_TOKEN_DAYS = 7
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="TETRA Monitor API", version="1.0.0")
 app.state.limiter = limiter
@@ -41,7 +39,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
 def _safe_username(username: str) -> str:
-    """Trunca el username a 32 chars para evitar filtrar contraseñas en los logs."""
     cleaned = username[:32]
     return cleaned if len(username) <= 32 else cleaned + "…"
 
@@ -85,15 +82,14 @@ class RefreshRequest(BaseModel):
 @app.get("/health")
 @limiter.limit("30/minute")
 def health(request: Request):
-    """Endpoint público para healthcheck — sin autenticación"""
     return {"status": "ok"}
 
 
 @app.post("/auth/token")
 @limiter.limit("5/minute")
 def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
-    """Obtener access token y refresh token con usuario y contraseña"""
-    if form_data.username != API_USER or not pwd_context.verify(form_data.password, API_PASSWORD_HASH):
+    password_ok = bcrypt.checkpw(form_data.password.encode(), API_PASSWORD_HASH)
+    if form_data.username != API_USER or not password_ok:
         logger.warning(f"Intento de login fallido para usuario '{_safe_username(form_data.username)}'")
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     access_token  = create_access_token(form_data.username)
@@ -110,7 +106,6 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
 @app.post("/auth/refresh")
 @limiter.limit("10/minute")
 def refresh(request: Request, body: RefreshRequest):
-    """Obtener un nuevo access token usando el refresh token"""
     if body.refresh_token not in app_state.refresh_tokens:
         logger.warning("Intento de refresh con token inválido o ya usado")
         raise HTTPException(status_code=401, detail="Refresh token inválido o expirado")
@@ -129,7 +124,6 @@ def refresh(request: Request, body: RefreshRequest):
 @app.post("/auth/logout")
 @limiter.limit("10/minute")
 def logout(request: Request, body: RefreshRequest):
-    """Invalidar el refresh token (cierre de sesión)"""
     app_state.refresh_tokens.discard(body.refresh_token)
     logger.info("Sesión cerrada correctamente")
     return {"status": "ok"}

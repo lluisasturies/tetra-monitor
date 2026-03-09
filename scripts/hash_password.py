@@ -9,26 +9,24 @@ Desde make:   make set-password
 """
 import argparse
 import getpass
-import os
 import re
 import sys
 from pathlib import Path
 
 try:
-    from passlib.context import CryptContext
+    import bcrypt
 except ImportError:
-    print("ERROR: passlib no está instalado. Ejecuta primero: make setup")
+    print("ERROR: bcrypt no está instalado. Ejecuta primero: make setup")
     sys.exit(1)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def update_env(env_path: Path, hashed: str):
     """Sustituye o añade API_PASSWORD_HASH en el .env. Elimina API_PASSWORD si existe."""
-    if env_path.exists():
-        content = env_path.read_text()
-    else:
-        content = ""
+    content = env_path.read_text() if env_path.exists() else ""
 
     # Eliminar API_PASSWORD (texto plano) si existe
     content = re.sub(r'^API_PASSWORD=.*$', '', content, flags=re.MULTILINE)
@@ -66,7 +64,11 @@ def main():
     if len(password) < 8:
         print("AVISO: La contraseña tiene menos de 8 caracteres.")
 
-    hashed = pwd_context.hash(password)
+    if len(password.encode()) > 72:
+        print("ERROR: La contraseña no puede superar 72 bytes (limitación de bcrypt).")
+        sys.exit(1)
+
+    hashed = hash_password(password)
 
     if args.env:
         update_env(args.env, hashed)
