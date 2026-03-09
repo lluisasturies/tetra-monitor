@@ -9,7 +9,6 @@ from jose import JWTError, jwt
 
 load_dotenv()
 
-from core.scan_config import scan_config
 from core.logger import logger
 from app_state import app_state
 
@@ -88,16 +87,16 @@ def llamada_detalle(llamada_id: int):
 
 @app.post("/update-gssi", dependencies=[Depends(verify_token)])
 def update_gssi(update: GSSIUpdate):
-    scan_config.update_gssi(update.gssi)
-    return {"status": "ok", "gssi": scan_config.gssi}
+    app_state.scan_config.update_gssi(update.gssi)
+    return {"status": "ok", "gssi": app_state.scan_config.gssi}
 
 
 @app.post("/update-scanlist", dependencies=[Depends(verify_token)])
 def update_scanlist(update: ScanListUpdate):
-    scan_config.update_scan_list(update.scan_list)
-    return {"status": "ok", "scan_list": scan_config.scan_list}
+    app_state.scan_config.update_scan_list(update.scan_list)
+    return {"status": "ok", "scan_list": app_state.scan_config.scan_list}
 
 
 @app.get("/scan-config", dependencies=[Depends(verify_token)])
 def get_scan_config():
-    return {"gssi": scan_config.gssi, "scan_list": scan_config.scan_list}
+    return {"gssi": app_state.scan_config.gssi, "scan_list": app_state.scan_config.scan_list}

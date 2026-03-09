@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from core.logger import logger
+from core.scan_config import ScanConfig
 from audio.audio_buffer import AudioBuffer
 from core.stt_processor import STTProcessor
 from filters.keyword_filter import KeywordFilter
@@ -34,6 +35,7 @@ print()
 PROJECT_ROOT  = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CONFIG_PATH   = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 KEYWORDS_PATH = os.path.join(PROJECT_ROOT, "config", "keywords.yaml")
+SCAN_PATH     = os.path.join(PROJECT_ROOT, "config", "scan.yaml")
 
 # ---------------------------
 # Cargar configuración
@@ -78,6 +80,12 @@ TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # ---------------------------
+# Inicializar scan config
+# ---------------------------
+scan_config = ScanConfig(SCAN_PATH)
+app_state.scan_config = scan_config
+
+# ---------------------------
 # Inicializar pool y repositorios
 # ---------------------------
 pool = DBPool(
@@ -89,7 +97,7 @@ pool = DBPool(
 )
 llamadas_db = LlamadasDB(pool)
 
-app_state.pool    = pool
+app_state.pool     = pool
 app_state.llamadas = llamadas_db
 
 # ---------------------------
@@ -134,6 +142,7 @@ pei_daemon = PEIDaemon(
     stt_processor=stt,
     keyword_filter=kf,
     llamadas_db=llamadas_db,
+    scan_config=scan_config,
     bot=bot,
     port=cfg["pei"].get("port", ""),
     baudrate=cfg["pei"]["baudrate"],

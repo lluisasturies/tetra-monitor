@@ -2,7 +2,7 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from core.logger import logger, calls_logger
-from core.scan_config import scan_config
+from core.scan_config import ScanConfig
 from audio.audio_cleanup import AudioCleanup
 from pei.models.pei_event import PEIEvent
 from db.llamadas import LlamadasDB
@@ -13,7 +13,7 @@ STT_MAX_WORKERS = 1
 
 class PEIDaemon:
     def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter,
-                 llamadas_db: LlamadasDB, bot,
+                 llamadas_db: LlamadasDB, scan_config: ScanConfig, bot,
                  port="", baudrate=9600, audio_output_dir="", retention_days=7,
                  recording_enabled=True, processing_enabled=True):
         self.motorola_pei_cls = motorola_pei_cls
@@ -21,6 +21,7 @@ class PEIDaemon:
         self.stt_processor = stt_processor
         self.keyword_filter = keyword_filter
         self.llamadas_db = llamadas_db
+        self.scan_config = scan_config
         self.bot = bot
         self.port = port
         self.baudrate = baudrate
@@ -42,10 +43,10 @@ class PEIDaemon:
         try:
             self.radio = self.motorola_pei_cls(puerto, self.baudrate)
             logger.info(f"Motorola PEI inicializado en {puerto}")
-            if scan_config.gssi:
-                self.radio.set_active_gssi(scan_config.gssi)
-            if scan_config.scan_list:
-                self.radio.set_scan_list(scan_config.scan_list)
+            if self.scan_config.gssi:
+                self.radio.set_active_gssi(self.scan_config.gssi)
+            if self.scan_config.scan_list:
+                self.radio.set_scan_list(self.scan_config.scan_list)
         except Exception as e:
             logger.critical(f"No se pudo inicializar PEI en {puerto}: {e}")
             self.radio = None
@@ -70,13 +71,13 @@ class PEIDaemon:
         if now - self._last_config_check < SCAN_CONFIG_CHECK_INTERVAL:
             return
         self._last_config_check = now
-        if scan_config.reload_if_changed():
+        if self.scan_config.reload_if_changed():
             logger.info("[PEI] Aplicando nuevo scan config a la radio")
             if self.radio:
-                if scan_config.gssi:
-                    self.radio.set_active_gssi(scan_config.gssi)
-                if scan_config.scan_list:
-                    self.radio.set_scan_list(scan_config.scan_list)
+                if self.scan_config.gssi:
+                    self.radio.set_active_gssi(self.scan_config.gssi)
+                if self.scan_config.scan_list:
+                    self.radio.set_scan_list(self.scan_config.scan_list)
 
     def _process_audio(self, path: str, grupo: int, ssi: int):
         """Corre en un hilo del executor — no bloquea el bucle PEI."""

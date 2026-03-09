@@ -5,6 +5,7 @@ if TYPE_CHECKING:
     from db.pool import DBPool
     from db.llamadas import LlamadasDB
     from integrations.telegram_bot import TelegramBot
+    from core.scan_config import ScanConfig
 
 
 class AppState:
@@ -12,6 +13,7 @@ class AppState:
     pool: DBPool | None = None
     llamadas: LlamadasDB | None = None
     bot: TelegramBot | None = None
+    scan_config: ScanConfig | None = None
 
 
 app_state = AppState()

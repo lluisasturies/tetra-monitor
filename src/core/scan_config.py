@@ -1,41 +1,39 @@
-import os
 import yaml
 from pathlib import Path
 from core.logger import logger
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SCAN_CONFIG_PATH = Path(os.path.join(BASE_DIR, "../../config/scan.yaml"))
 
 class ScanConfig:
-    def __init__(self):
+    def __init__(self, filepath: str | Path):
+        self._filepath = Path(filepath)
         self.gssi: str = ""
         self.scan_list: str = ""
         self._last_mtime: float = 0.0
         self._load()
 
     def _load(self):
-        if SCAN_CONFIG_PATH.exists():
+        if self._filepath.exists():
             try:
-                with open(SCAN_CONFIG_PATH, "r") as f:
+                with open(self._filepath, "r") as f:
                     data = yaml.safe_load(f) or {}
                 scan = data.get("scan", {})
                 self.gssi = scan.get("gssi", "")
                 self.scan_list = scan.get("scan_list", "")
-                self._last_mtime = SCAN_CONFIG_PATH.stat().st_mtime
+                self._last_mtime = self._filepath.stat().st_mtime
                 logger.info(f"Scan config cargada: gssi='{self.gssi}', scan_list='{self.scan_list}'")
             except yaml.YAMLError as e:
                 logger.error(f"Error leyendo scan config: {e}")
                 self.gssi = ""
                 self.scan_list = ""
         else:
-            logger.warning(f"No existe scan.yaml en {SCAN_CONFIG_PATH}, usando valores vacíos")
+            logger.warning(f"No existe scan.yaml en {self._filepath}, usando valores vacíos")
 
     def reload_if_changed(self) -> bool:
         """Relee desde disco si el fichero fue modificado. Devuelve True si hubo cambios."""
-        if not SCAN_CONFIG_PATH.exists():
+        if not self._filepath.exists():
             return False
         try:
-            mtime = SCAN_CONFIG_PATH.stat().st_mtime
+            mtime = self._filepath.stat().st_mtime
         except OSError:
             return False
         if mtime <= self._last_mtime:
@@ -53,10 +51,10 @@ class ScanConfig:
 
     def save(self):
         try:
-            with open(SCAN_CONFIG_PATH, "w") as f:
+            with open(self._filepath, "w") as f:
                 yaml.safe_dump({"scan": {"gssi": self.gssi, "scan_list": self.scan_list}}, f)
-            self._last_mtime = SCAN_CONFIG_PATH.stat().st_mtime  # evita releer lo que acabamos de escribir
-            logger.info(f"Scan config guardada en {SCAN_CONFIG_PATH}")
+            self._last_mtime = self._filepath.stat().st_mtime
+            logger.info(f"Scan config guardada en {self._filepath}")
         except Exception as e:
             logger.error(f"No se pudo guardar scan config: {e}")
 
@@ -69,5 +67,3 @@ class ScanConfig:
         logger.info(f"Actualizando scan list a: {scan_list}")
         self.scan_list = scan_list
         self.save()
-
-scan_config = ScanConfig()
