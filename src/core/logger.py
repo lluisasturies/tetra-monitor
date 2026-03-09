@@ -1,21 +1,9 @@
 import os
-import yaml
 import logging
 from logging.handlers import RotatingFileHandler
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../config/config.yaml")
-
-try:
-    with open(CONFIG_PATH, "r") as f:
-        cfg = yaml.safe_load(f) or {}
-except Exception:
-    cfg = {}
-
-level_name = cfg.get("logging", {}).get("level", "INFO").upper()
-level = getattr(logging, level_name, logging.INFO)
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_DIR = os.path.join(BASE_DIR, "../../logs")
+LOG_DIR  = os.path.join(BASE_DIR, "../../logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 
@@ -35,12 +23,12 @@ class ColorFormatter(logging.Formatter):
         return f"{color}{message}{self.RESET}"
 
 
-def setup_logger():
-    formatter = logging.Formatter("%(asctime)s | [%(levelname)s] | %(message)s")
+def _setup_logger():
+    formatter         = logging.Formatter("%(asctime)s | [%(levelname)s] | %(message)s")
     console_formatter = ColorFormatter("%(asctime)s | [%(levelname)s] | %(message)s")
 
     app_logger = logging.getLogger("app")
-    app_logger.setLevel(level)
+    app_logger.setLevel(logging.INFO)  # nivel por defecto, main.py lo ajusta tras leer config
     app_logger.propagate = False
 
     console_handler = logging.StreamHandler()
@@ -56,7 +44,7 @@ def setup_logger():
     app_logger.addHandler(file_handler)
 
     calls_logger = logging.getLogger("calls")
-    calls_logger.setLevel(level)
+    calls_logger.setLevel(logging.INFO)
     calls_logger.propagate = False
 
     calls_handler = RotatingFileHandler(
@@ -70,4 +58,11 @@ def setup_logger():
     return app_logger, calls_logger
 
 
-logger, calls_logger = setup_logger()
+def set_level(level_name: str):
+    """Ajusta el nivel de log en todos los loggers. Llamar desde main.py tras leer config."""
+    level = getattr(logging, level_name.upper(), logging.INFO)
+    logging.getLogger("app").setLevel(level)
+    logging.getLogger("calls").setLevel(level)
+
+
+logger, calls_logger = _setup_logger()

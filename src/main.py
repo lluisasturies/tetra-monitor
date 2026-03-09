@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from core.logger import logger
+from core.logger import logger, set_level
 from core.scan_config import ScanConfig
 from audio.audio_buffer import AudioBuffer
 from core.stt_processor import STTProcessor
@@ -50,6 +50,9 @@ except FileNotFoundError:
 except yaml.YAMLError as e:
     logger.critical(f"Error parseando config.yaml: {e}")
     sys.exit(1)
+
+# Aplicar nivel de log desde config
+set_level(cfg.get("logging", {}).get("level", "INFO"))
 
 AUDIO_OUTPUT_DIR   = os.path.join(PROJECT_ROOT, cfg["audio"].get("output_dir", "data/audio"))
 RETENTION_DAYS     = cfg["audio"].get("retention_days", 7)
@@ -159,7 +162,6 @@ streamer = None
 stream_cfg = cfg.get("streaming", {})
 
 if stream_cfg.get("enabled", False):
-    # Propagar parámetros de audio al streamer
     stream_cfg["samplerate"] = cfg["audio"]["sample_rate"]
     stream_cfg["channels"]   = cfg["audio"]["channels"]
     streamer = create_streamer(stream_cfg)
