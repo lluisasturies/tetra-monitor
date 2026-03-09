@@ -12,7 +12,7 @@ audio:
   sample_rate: 16000
   channels: 1
   prebuffer_seconds: 5
-  output_dir: "../data/audio"
+  output_dir: "data/audio"
   retention_days: 7
   recording_enabled: true    # false → no guarda ficheros de audio en disco
 
