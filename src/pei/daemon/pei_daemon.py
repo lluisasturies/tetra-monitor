@@ -55,12 +55,16 @@ class PEIDaemon:
             self.radio = self.motorola_pei_cls(puerto, self.baudrate)
             logger.info(f"Motorola PEI inicializado en {puerto}")
             self._apply_scan_config()
+            self.bot.radio_active = True
+            logger.info("[Telegram] Alertas activadas — radio conectada")
         except Exception as e:
             logger.critical(f"No se pudo inicializar PEI en {puerto}: {e}")
             self.radio = None
+            self.bot.radio_active = False
 
     def _reconnect_radio(self):
         logger.warning("[PEI] Intentando reconectar radio...")
+        self.bot.radio_active = False
         try:
             if self.radio:
                 self.radio.close()
@@ -190,6 +194,7 @@ class PEIDaemon:
 
     def shutdown(self, streamer=None):
         logger.info("Apagando PEI...")
+        self.bot.radio_active = False
         self._executor.shutdown(wait=True)
 
         if streamer:

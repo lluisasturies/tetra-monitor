@@ -8,13 +8,17 @@ class TelegramBot:
         self.token = token
         self.chat_id = chat_id
         self.max_retries = max_retries
-        self.enabled = enabled
+        self.enabled = enabled       # permiso global desde config.yaml
+        self.radio_active = False    # activado por el daemon cuando la radio conecta
 
         logger.info(f"Telegram: {'ACTIVADO' if self.enabled else 'DESACTIVADO'}")
 
     def enviar_alerta(self, grupo: int, ssi: int, texto: str):
         if not self.enabled:
-            logger.debug("[Telegram] Alerta ignorada — Telegram desactivado")
+            logger.debug("[Telegram] Alerta ignorada — Telegram desactivado en config")
+            return
+        if not self.radio_active:
+            logger.debug("[Telegram] Alerta ignorada — radio no conectada")
             return
 
         mensaje = (
