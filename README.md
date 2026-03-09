@@ -18,63 +18,6 @@ Sistema de monitorización de redes TETRA sobre Raspberry Pi. Escucha eventos PT
 
 ---
 
-## Estructura del proyecto
-```
-tetra-monitor/
-├── config/
-│   ├── config.yaml          # Configuración principal
-│   ├── keywords.yaml        # Palabras clave para filtrado (recarga en caliente)
-│   ├── scan.yaml            # GSSI y scan list activos en el radio (modificable via API)
-│   ├── grupos.yaml          # Semilla inicial de grupos y scan lists (solo primer arranque)
-│   └── nginx.conf           # Configuración nginx (proxy inverso TLS)
-├── data/
-│   ├── audio/               # Grabaciones .flac
-│   └── db/
-│       └── schema.sql       # DDL de PostgreSQL (llamadas + grupos + scan lists)
-├── logs/                    # Logs de la aplicación
-├── scripts/
-│   ├── setup.sh                          # Instalación completa
-│   ├── setup_nginx.sh                    # Instalación HTTPS con nginx
-│   ├── migrate_grupos.sql                # Migración para instalaciones existentes
-│   ├── hash_password.py                  # Generador de hash bcrypt
-│   ├── start.sh                          # Arranque del daemon
-│   └── tetra-monitor.service.template    # Plantilla unit file systemd
-├── Makefile                 # Atajos para operaciones comunes
-└── src/
-    ├── main.py              # Punto de entrada (daemon + API en un solo proceso)
-    ├── app_state.py         # Contenedor de dependencias compartidas
-    ├── api/
-    │   └── api.py           # API REST (FastAPI + JWT + rate limiting)
-    ├── audio/
-    │   ├── audio_buffer.py  # Captura y grabación de audio
-    │   └── audio_cleanup.py # Limpieza automática de ficheros FLAC
-    ├── core/
-    │   ├── logger.py        # Logger centralizado
-    │   ├── radio_config.py  # Config activa del radio (GSSI + scan list, mtime IPC)
-    │   └── stt_processor.py # Transcripción con Whisper
-    ├── db/
-    │   ├── pool.py          # ThreadedConnectionPool compartido
-    │   ├── llamadas.py      # Queries sobre la tabla llamadas
-    │   └── grupos.py        # Catálogo de grupos y scan lists
-    ├── filters/
-    │   └── keyword_filter.py # Filtrado por palabras clave (recarga en caliente)
-    ├── integrations/
-    │   └── telegram_bot.py  # Notificaciones Telegram
-    ├── pei/
-    │   ├── daemon/
-    │   │   └── pei_daemon.py    # Bucle principal de eventos
-    │   ├── hardware/
-    │   │   └── pei_motorola.py  # Comunicación serie con la radio
-    │   └── models/
-    │       └── pei_event.py     # Dataclass PEIEvent
-    └── streaming/
-        ├── base_streamer.py     # Clase base ffmpeg
-        ├── icecast_streamer.py  # Streaming a Icecast
-        └── rtmp_streamer.py     # Streaming RTMP
-```
-
----
-
 ## Instalación
 
 ### 1. Clonar el repositorio
@@ -120,7 +63,7 @@ make set-password
 El script pide la contraseña dos veces, genera el hash bcrypt y lo escribe directamente en `.env`.
 
 ### 5. (Opcional) Personalizar el catálogo de grupos
-Edita `config/grupos.yaml` antes del primer arranque para definir los GSSIs y scan lists de tu red. En el primer arranque se cargan automáticamente en la BD. A partir de entonces el catálogo se gestiona directamente desde la BD (via API o DBeaver).
+Edita `config/grupos.yaml` antes del primer arranque para definir los GSSIs y scan lists de tu red. En el primer arranque se cargan automáticamente en la BD. A partir de entonces el catálogo se gestiona directamente desde la BD (via API).
 
 ```yaml
 grupos:
@@ -133,12 +76,6 @@ grupos:
 scan_lists:
   - nombre: "ListaScan1"
     grupos: [36001, 36002]
-```
-
-#### Migración desde una instalación existente
-Si ya tienes el sistema instalado y quieres añadir las tablas de grupos:
-```bash
-psql -U $DB_USER -d tetra -f scripts/migrate_grupos.sql
 ```
 
 ---
@@ -253,13 +190,13 @@ Respuesta:
 | `POST` | `/auth/logout` | No | Invalidar refresh token |
 | `GET` | `/calls` | Sí | Listar llamadas (params: `limit`, `offset`, `gssi`, `ssi`, `texto`) |
 | `GET` | `/calls/{id}` | Sí | Detalle de una llamada |
-| `GET` | `/radio-config` | Sí | Ver GSSI y scan list activos en el radio |
-| `POST` | `/radio-config/gssi` | Sí | Cambiar GSSI activo en el radio |
-| `POST` | `/radio-config/scan-list` | Sí | Cambiar scan list activa en el radio |
+| `GET` | `/afiliacion` | Sí | Ver GSSI y scan list activos en el radio |
+| `POST` | `/afiliacion/gssi` | Sí | Cambiar GSSI activo en el radio |
+| `POST` | `/afiliacion/scan-list` | Sí | Cambiar scan list activa en el radio |
 | `GET` | `/groups` | Sí | Listar catálogo de grupos (param: `solo_activos`) |
 | `GET` | `/groups/{gssi}` | Sí | Detalle de un grupo |
 | `POST` | `/groups` | Sí | Crear o actualizar un grupo (upsert) |
-| `GET` | `/scan-lists` | Sí | Listar scan lists con grupos anidados |
+| `GET` | `/scan-lists` | Sí | Listar scan lists con sus grupos |
 
 ### Ejemplos
 ```bash
@@ -270,12 +207,16 @@ TOKEN=$(curl -s -X POST http://raspberrypi:8000/auth/token \
 curl -H "Authorization: Bearer $TOKEN" \
   "http://raspberrypi:8000/calls?limit=10&gssi=36001"
 
-# Cambiar GSSI activo en el radio
+# Ver afiliación activa del radio
+curl -H "Authorization: Bearer $TOKEN" \
+  http://raspberrypi:8000/afiliacion
+
+# Cambiar GSSI activo
 curl -X POST \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"gssi": "36001"}' \
-  http://raspberrypi:8000/radio-config/gssi
+  http://raspberrypi:8000/afiliacion/gssi
 
 # Listar catálogo de grupos
 curl -H "Authorization: Bearer $TOKEN" \
@@ -301,7 +242,7 @@ El sistema corre en **un único proceso** con dos componentes concurrentes:
 - **Daemon PEI** — escucha la radio por puerto serie, graba audio, transcribe y alerta
 - **API REST** — corre en un hilo separado, expone endpoints para consultar llamadas y modificar la configuración
 
-La comunicación entre ambos se hace a través de `config/scan.yaml`. Cuando la API actualiza el GSSI o la scan list activa, escribe en el fichero. El daemon comprueba el `mtime` cada 5 segundos y aplica los cambios a la radio si detecta modificaciones. Lo mismo aplica a `config/keywords.yaml`, que también se recarga en caliente.
+La comunicación entre ambos se hace a través de `config/afiliacion.yaml`. Cuando la API actualiza el GSSI o la scan list activa, escribe en el fichero. El daemon comprueba el `mtime` cada 5 segundos y aplica los cambios a la radio si detecta modificaciones. Lo mismo aplica a `config/keywords.yaml`, que también se recarga en caliente.
 
 El **catálogo de grupos** (`grupos`, `scan_lists`, `scan_list_grupos`) vive en PostgreSQL y se usa para enriquecer las llamadas con el nombre del grupo. En el primer arranque se puede poblar desde `config/grupos.yaml` de forma automática; a partir de entonces se gestiona directamente en BD.
 
