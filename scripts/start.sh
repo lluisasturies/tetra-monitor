@@ -14,7 +14,9 @@ echo "==============================="
 # Cargar variables de entorno
 # ---------------------------
 if [ -f "$ENV_FILE" ]; then
-    export $(grep -v '^#' "$ENV_FILE" | xargs)
+    set -a
+    source "$ENV_FILE"
+    set +a
     echo "Variables de entorno cargadas desde .env"
 else
     echo "ERROR: No se encontró .env en $ENV_FILE"
