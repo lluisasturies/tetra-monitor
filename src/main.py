@@ -118,7 +118,10 @@ app_state.bot = bot
 # ---------------------------
 def _is_hardware_error(msg: str) -> bool:
     msg = msg.lower()
-    return any(k in msg for k in ["querying device", "ttyusb", "no such file", "puerto", "serial"])
+    return any(k in msg for k in [
+        "querying device", "ttyusb", "no such file", "puerto", "serial",
+        "audiobuffer no disponible", "audiobuffer"
+    ])
 
 try:
     audio_buffer = AudioBuffer(
@@ -132,7 +135,7 @@ try:
 except Exception as e:
     if _is_hardware_error(str(e)):
         logger.warning(f"Dispositivo de audio no disponible: {e}")
-        logger.warning("Revisa 'device_index' en config.yaml. Sal con Ctrl+C y vuelve a arrancar.")
+        logger.warning("Revisa 'device_index' en config.yaml y vuelve a arrancar.")
         sys.exit(0)
     logger.critical(f"No se pudo inicializar AudioBuffer: {e}")
     sys.exit(1)
@@ -217,7 +220,7 @@ try:
 except RuntimeError as e:
     if _is_hardware_error(str(e)):
         logger.warning(f"Hardware no disponible: {e}")
-        logger.warning("Conecta la radio y vuelve a arrancar.")
+        logger.warning("Conecta el hardware y vuelve a arrancar.")
         sys.exit(0)
     logger.critical(f"Error en PEI: {e}")
     sys.exit(1)
