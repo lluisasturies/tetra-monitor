@@ -49,6 +49,10 @@ except yaml.YAMLError as e:
 AUDIO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, cfg["audio"].get("output_dir", "data/audio"))
 RETENTION_DAYS = cfg["audio"].get("retention_days", 7)
 
+# Leer flags de activación
+RECORDING_ENABLED  = cfg["audio"].get("recording_enabled", True)
+PROCESSING_ENABLED = cfg["pei"].get("processing_enabled", True)
+
 # Sobreescribir credenciales con variables de entorno (tienen prioridad)
 cfg["database"]["password"] = os.getenv("DB_PASSWORD", cfg["database"].get("password", ""))
 cfg["database"]["user"]     = os.getenv("DB_USER", cfg["database"].get("user", ""))
@@ -95,7 +99,9 @@ pei_daemon = PEIDaemon(
     port=cfg["pei"].get("port", ""),
     baudrate=cfg["pei"]["baudrate"],
     audio_output_dir=AUDIO_OUTPUT_DIR,
-    retention_days=RETENTION_DAYS
+    retention_days=RETENTION_DAYS,
+    recording_enabled=RECORDING_ENABLED,
+    processing_enabled=PROCESSING_ENABLED,
 )
 
 # ---------------------------

@@ -2,27 +2,6 @@ logging:
   level: INFO       # INFO, WARNING, ERROR, CRITICAL
   console: true
 
-pei:
-  port: "/dev/ttyUSB0"
-  baudrate: 9600
-
-audio:
-  device_index: 1
-  sample_rate: 16000
-  channels: 1
-  prebuffer_seconds: 5
-  output_dir: "../data/audio"
-  retention_days: 7   # ficheros .flac más antiguos que esto se borran automáticamente
-
-streaming:
-  enabled: true
-  rtmp_url: rtmp://localhost/live/tetra
-#  icecast_url: icecast://source:password@localhost:8000/tetra
-
-stt:
-  model: "base"     # tiny/base en RPi, small/medium si hay más RAM
-  language: "es"
-
 database:
   host: "localhost"
   port: 5432
@@ -30,11 +9,34 @@ database:
   password: ""      # definir en .env como DB_PASSWORD
   dbname: "tetra"
 
-api:
-  host: "0.0.0.0"
-  port: 8000
-  jwt_secret: ""    # definir en .env como JWT_SECRET
+pei:
+  processing_enabled: true   # false → ignora eventos PEI (no graba ni transcribe)
+  port: "/dev/ttyUSB0"
+  baudrate: 9600
+
+audio:
+  recording_enabled: true    # false → no guarda ficheros de audio en disco
+  device_index: 1
+  sample_rate: 16000
+  channels: 1
+  prebuffer_seconds: 5
+  output_dir: "../data/audio"
+  retention_days: 7   # ficheros .flac más antiguos que esto se borran automáticamente
+
+stt:
+  model: "base"     # tiny/base en RPi, small/medium si hay más RAM
+  language: "es"
+
+streaming:
+  enabled: true
+  rtmp_url: rtmp://localhost/live/tetra
+#  icecast_url: icecast://source:password@localhost:8000/tetra
 
 telegram:
   token: ""         # definir en .env como TELEGRAM_TOKEN
   chat_id: ""       # definir en .env como TELEGRAM_CHAT_ID
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  jwt_secret: ""    # definir en .env como JWT_SECRET

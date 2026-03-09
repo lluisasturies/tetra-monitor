@@ -14,7 +14,8 @@ STT_MAX_WORKERS = 1
 
 class PEIDaemon:
     def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter, db, bot,
-                 port="", baudrate=9600, audio_output_dir="", retention_days=7):
+                 port="", baudrate=9600, audio_output_dir="", retention_days=7,
+                 recording_enabled=True, processing_enabled=True):
         self.motorola_pei_cls = motorola_pei_cls
         self.audio_buffer = audio_buffer
         self.stt_processor = stt_processor
@@ -23,6 +24,8 @@ class PEIDaemon:
         self.bot = bot
         self.port = port
         self.baudrate = baudrate
+        self.recording_enabled = recording_enabled
+        self.processing_enabled = processing_enabled
         self.radio = None
         self._last_config_check = 0.0
         self._current_grupo = 0
@@ -30,6 +33,10 @@ class PEIDaemon:
         self._executor = ThreadPoolExecutor(max_workers=STT_MAX_WORKERS)
         self._cleanup = AudioCleanup(audio_output_dir, retention_days)
         self._init_radio()
+
+        # Log del estado inicial de los flags
+        logger.info(f"Grabación de audio: {'ACTIVADA'  if self.recording_enabled  else 'DESACTIVADA'}")
+        logger.info(f"Procesado PEI:      {'ACTIVADO'  if self.processing_enabled else 'DESACTIVADO'}")
 
     def _init_radio(self):
         puerto = self.port or "/dev/ttyUSB0"
@@ -86,20 +93,31 @@ class PEIDaemon:
             logger.error(f"Error en transcripción async (grupo={grupo}, ssi={ssi}): {e}")
 
     def _handle_event(self, event: PEIEvent):
+        # Si el procesado PEI está desactivado, ignorar todos los eventos
+        if not self.processing_enabled:
+            logger.debug(f"[PEI] Evento ignorado (processing_enabled=false): {event.type}")
+            return
+
         if event.type == "PTT_START":
             logger.info(f"PTT START — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
-            self.audio_buffer.start_recording()
+            if self.recording_enabled:
+                self.audio_buffer.start_recording()
+            else:
+                logger.debug("[PEI] PTT START ignorado — grabación desactivada")
 
         elif event.type == "PTT_END":
             logger.info(f"PTT END — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
-            filename = f"{self._current_grupo}_{self._current_ssi}_{int(time.time())}.flac"
-            path = self.audio_buffer.stop_recording(filename)
+            if self.recording_enabled:
+                filename = f"{self._current_grupo}_{self._current_ssi}_{int(time.time())}.flac"
+                path = self.audio_buffer.stop_recording(filename)
 
-            if path:
-                grupo = self._current_grupo
-                ssi = self._current_ssi
-                self._executor.submit(self._process_audio, path, grupo, ssi)
-                logger.debug(f"Transcripción encolada para {path}")
+                if path:
+                    grupo = self._current_grupo
+                    ssi = self._current_ssi
+                    self._executor.submit(self._process_audio, path, grupo, ssi)
+                    logger.debug(f"Transcripción encolada para {path}")
+            else:
+                logger.debug("[PEI] PTT END ignorado — grabación desactivada")
 
         elif event.type == "CALL_START":
             self._current_grupo = event.grupo
