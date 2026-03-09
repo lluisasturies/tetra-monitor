@@ -1,6 +1,6 @@
 import time
 from concurrent.futures import ThreadPoolExecutor
-from core.logger import logger
+from core.logger import logger, calls_logger
 from core.scan_config import scan_config
 from audio.audio_cleanup import AudioCleanup
 from pei.models.pei_event import PEIEvent
@@ -100,6 +100,7 @@ class PEIDaemon:
 
         if event.type == "PTT_START":
             logger.info(f"PTT START — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
+            calls_logger.info(f"PTT_START | grupo={self._current_grupo} | ssi={self._current_ssi}")
             if self.recording_enabled:
                 self.audio_buffer.start_recording()
             else:
@@ -107,6 +108,7 @@ class PEIDaemon:
 
         elif event.type == "PTT_END":
             logger.info(f"PTT END — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
+            calls_logger.info(f"PTT_END | grupo={self._current_grupo} | ssi={self._current_ssi}")
             if self.recording_enabled:
                 filename = f"{self._current_grupo}_{self._current_ssi}_{int(time.time())}.flac"
                 path = self.audio_buffer.stop_recording(filename)
@@ -123,12 +125,15 @@ class PEIDaemon:
             self._current_grupo = event.grupo
             self._current_ssi = event.ssi
             logger.info(f"CALL START — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
+            calls_logger.info(f"CALL_START | grupo={self._current_grupo} | ssi={self._current_ssi}")
 
         elif event.type == "CALL_CONNECTED":
             logger.info(f"CALL CONNECTED — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
+            calls_logger.info(f"CALL_CONNECTED | grupo={self._current_grupo} | ssi={self._current_ssi}")
 
         elif event.type == "CALL_END":
             logger.info(f"CALL END — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
+            calls_logger.info(f"CALL_END | grupo={self._current_grupo} | ssi={self._current_ssi}")
             self._current_grupo = 0
             self._current_ssi = 0
 
