@@ -13,22 +13,14 @@ grupos:
     nombre: "Seguridad"
 
 # Carpetas organizativas — equivalente a las folders de la radio.
+# El orden de las carpetas y de los grupos dentro de cada carpeta
+# se asigna automáticamente por posición (no hace falta especificarlo).
 # Un GSSI puede aparecer en varias carpetas.
 carpetas:
   - nombre: "Operativo"
-    orden: 0
-    grupos:
-      - gssi: 36001
-        orden: 0
-      - gssi: 36003
-        orden: 1
+    grupos: [36001, 36003]
   - nombre: "Emergencias"
-    orden: 1
-    grupos:
-      - gssi: 36002
-        orden: 0
-      - gssi: 36004
-        orden: 1
+    grupos: [36002, 36004]
 
 scan_lists:
   - nombre: "ListaScan1"

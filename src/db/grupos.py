@@ -20,6 +20,8 @@ class GruposDB:
     def seed_from_yaml(self, filepath: str | Path) -> bool:
         """
         Carga grupos, carpetas y scan lists desde un YAML si las tablas están vacías.
+        El orden de carpetas y de grupos dentro de cada carpeta se asigna
+        automáticamente por posición en el YAML (0, 1, 2...) si no se especifica.
         Devuelve True si se insertaron datos, False si ya había datos o hubo error.
         """
         if yaml is None:
@@ -62,8 +64,9 @@ class GruposDB:
                         (g["gssi"], g["nombre"])
                     )
 
-                # Carpetas
-                for c in carpetas:
+                # Carpetas — orden por posición si no se especifica
+                for carpeta_orden, c in enumerate(carpetas):
+                    orden_carpeta = c.get("orden", carpeta_orden)
                     cur.execute(
                         """
                         INSERT INTO carpetas (nombre, orden)
@@ -71,7 +74,7 @@ class GruposDB:
                         ON CONFLICT (nombre) DO NOTHING
                         RETURNING id
                         """,
-                        (c["nombre"], c.get("orden", 0))
+                        (c["nombre"], orden_carpeta)
                     )
                     row = cur.fetchone()
                     if row is None:
@@ -79,14 +82,22 @@ class GruposDB:
                         row = cur.fetchone()
                     carpeta_id = row[0]
 
-                    for entry in c.get("grupos", []):
+                    # Grupos dentro de la carpeta — orden por posición si no se especifica
+                    # Acepta tanto lista de ints [36001, 36002] como lista de dicts [{gssi: 36001}, ...]
+                    for grupo_orden, entry in enumerate(c.get("grupos", [])):
+                        if isinstance(entry, int):
+                            gssi        = entry
+                            orden_grupo = grupo_orden
+                        else:
+                            gssi        = entry["gssi"]
+                            orden_grupo = entry.get("orden", grupo_orden)
                         cur.execute(
                             """
                             INSERT INTO carpeta_grupos (carpeta_id, gssi, orden)
                             VALUES (%s, %s, %s)
                             ON CONFLICT DO NOTHING
                             """,
-                            (carpeta_id, entry["gssi"], entry.get("orden", 0))
+                            (carpeta_id, gssi, orden_grupo)
                         )
 
                 # Scan lists
