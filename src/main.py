@@ -22,9 +22,9 @@ from streaming import create_streamer
 from app_state import app_state
 
 print()
-print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀▀░░░░░█▄█░█▀▀░█▀▀░▀█▀░▀█▀░█▀▀░█▀▄")
-print("░░█░░█▀▀░░█░░█▀▄░█▀▀░▄▄▄░█░█░█░░░█░█░░█░░░█░░█░█░█▀▄")
-print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀░▀░▀▀▀░░▀░░▀▀▀░▀░▀")
+print("░▀██░░█▀▀░▀██░█▀▄░█▀▀░░░░░█▄█░█▀▀░█▀▀░▀██░▀██░█▀▀░█▀▄")
+print("░░█░░█▀▀░░█░░█▀▄░█▀▀░▄▄▄░█░█░█░░░░█░█░░░█░░█░░█░█░█▀▄")
+print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀▀▀░░▀▀▀░░▀░░▀▀▀░▀░▀")
 print("2026 © Lluis de la Rubia / LluisAsturies")
 print()
 
@@ -58,6 +58,7 @@ RETENTION_DAYS     = cfg["audio"].get("retention_days", 7)
 RECORDING_ENABLED  = cfg["audio"].get("recording_enabled", True)
 PROCESSING_ENABLED = cfg["pei"].get("processing_enabled", True)
 TELEGRAM_ENABLED   = cfg["telegram"].get("enabled", True)
+SAVE_ALL_CALLS     = cfg["database"].get("save_all_calls", False)
 
 # ---------------------------
 # Validar variables de entorno
@@ -175,6 +176,7 @@ pei_daemon = PEIDaemon(
     retention_days=RETENTION_DAYS,
     recording_enabled=RECORDING_ENABLED,
     processing_enabled=PROCESSING_ENABLED,
+    save_all_calls=SAVE_ALL_CALLS,
 )
 
 # ---------------------------
@@ -187,6 +189,7 @@ logger.info(f"Grabación de audio       : {'ACTIVADA'  if RECORDING_ENABLED  els
 logger.info(f"Procesado PEI            : {'ACTIVADO'  if PROCESSING_ENABLED else 'DESACTIVADO'}")
 logger.info(f"Notificaciones Telegram  : {'ACTIVADAS' if TELEGRAM_ENABLED   else 'DESACTIVADAS'}")
 logger.info(f"Streaming                : {'ACTIVADO'  if STREAMING_ENABLED  else 'DESACTIVADO'}")
+logger.info(f"Guardado en BD           : {'TODAS las llamadas' if SAVE_ALL_CALLS else 'Solo llamadas con keyword'}")
 
 # ---------------------------
 # Arrancar API en hilo separado

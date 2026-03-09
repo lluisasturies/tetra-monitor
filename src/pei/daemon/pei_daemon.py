@@ -15,7 +15,7 @@ class PEIDaemon:
     def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter,
                  llamadas_db: LlamadasDB, scan_config: ScanConfig, bot,
                  port="", baudrate=9600, audio_output_dir="", retention_days=7,
-                 recording_enabled=True, processing_enabled=True):
+                 recording_enabled=True, processing_enabled=True, save_all_calls=False):
         self.motorola_pei_cls = motorola_pei_cls
         self.audio_buffer = audio_buffer
         self.stt_processor = stt_processor
@@ -27,6 +27,7 @@ class PEIDaemon:
         self.baudrate = baudrate
         self.recording_enabled = recording_enabled
         self.processing_enabled = processing_enabled
+        self.save_all_calls = save_all_calls
         self.radio = None
         self._last_config_check = 0.0
         self._current_grupo = 0
@@ -88,15 +89,26 @@ class PEIDaemon:
             texto = self.stt_processor.transcribe(path)
             logger.info(f"Transcripción (grupo={grupo}, ssi={ssi}): {texto}")
 
-            if self.keyword_filter.contiene_evento(texto):
+            tiene_keyword = self.keyword_filter.contiene_evento(texto)
+
+            if self.save_all_calls:
+                # Guarda siempre, alerta solo si tiene keyword
                 self.llamadas_db.guardar(grupo, ssi, texto, path)
-                self.bot.enviar_alerta(grupo, ssi, texto)
+                if tiene_keyword:
+                    self.bot.enviar_alerta(grupo, ssi, texto)
+                else:
+                    logger.debug(f"Llamada guardada sin keyword (grupo={grupo}, ssi={ssi})")
             else:
-                try:
-                    os.remove(path)
-                    logger.debug(f"Audio sin keyword eliminado: {path}")
-                except Exception as e:
-                    logger.warning(f"No se pudo eliminar audio sin keyword {path}: {e}")
+                # Comportamiento por defecto: guarda y alerta solo con keyword
+                if tiene_keyword:
+                    self.llamadas_db.guardar(grupo, ssi, texto, path)
+                    self.bot.enviar_alerta(grupo, ssi, texto)
+                else:
+                    try:
+                        os.remove(path)
+                        logger.debug(f"Audio sin keyword eliminado: {path}")
+                    except Exception as e:
+                        logger.warning(f"No se pudo eliminar audio sin keyword {path}: {e}")
 
         except Exception as e:
             logger.error(f"Error en transcripción async (grupo={grupo}, ssi={ssi}): {e}")

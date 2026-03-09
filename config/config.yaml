@@ -29,6 +29,9 @@ database:
   host: "localhost"
   port: 5432
   dbname: "tetra"
+  # true  → guarda todas las llamadas en BD (con y sin keyword)
+  # false → guarda solo las que contienen alguna palabra clave
+  save_all_calls: false
 
 api:
   host: "0.0.0.0"
