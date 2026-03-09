@@ -28,6 +28,23 @@ CREATE TABLE IF NOT EXISTS grupos (
 
 CREATE INDEX IF NOT EXISTS idx_grupos_activo ON grupos (activo);
 
+-- Carpetas organizativas (equivalente a las folders de la radio)
+-- Un GSSI puede estar en varias carpetas
+CREATE TABLE IF NOT EXISTS carpetas (
+    id          SERIAL PRIMARY KEY,
+    nombre      TEXT    NOT NULL UNIQUE,
+    descripcion TEXT,
+    orden       SMALLINT NOT NULL DEFAULT 0  -- orden de visualización
+);
+
+-- Relación N:M entre carpetas y grupos
+CREATE TABLE IF NOT EXISTS carpeta_grupos (
+    carpeta_id  INTEGER  REFERENCES carpetas(id)    ON DELETE CASCADE,
+    gssi        INTEGER  REFERENCES grupos(gssi)    ON DELETE CASCADE,
+    orden       SMALLINT NOT NULL DEFAULT 0,        -- orden dentro de la carpeta
+    PRIMARY KEY (carpeta_id, gssi)
+);
+
 -- Listas de escaneo
 CREATE TABLE IF NOT EXISTS scan_lists (
     id     SERIAL PRIMARY KEY,

@@ -41,11 +41,6 @@ CORS_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()] or ["http:
 # ------------------------------------------------------------------
 
 def _init_standalone():
-    """
-    Inicializa el pool, repositorios y afiliacion config cuando la API
-    arranca de forma independiente (desarrollo / testing sin main.py).
-    Si app_state ya está inicializado (arrancado desde main.py), no hace nada.
-    """
     if app_state.pool is not None:
         return
 
@@ -70,16 +65,13 @@ def _init_standalone():
         logger.error(f"[API standalone] No se pudo leer config.yaml: {e}")
         return
 
-    db_user     = os.getenv("DB_USER", "")
-    db_password = os.getenv("DB_PASSWORD", "")
-
     try:
         pool = DBPool(
             host=cfg["database"]["host"],
             port=cfg["database"]["port"],
             dbname=cfg["database"]["dbname"],
-            user=db_user,
-            password=db_password,
+            user=os.getenv("DB_USER", ""),
+            password=os.getenv("DB_PASSWORD", ""),
         )
     except Exception as e:
         logger.error(f"[API standalone] No se pudo conectar a la BD: {e}")
@@ -116,7 +108,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -182,7 +174,7 @@ class GSSIUpdate(BaseModel):
     gssi: str
 
 class ScanListUpdate(BaseModel):
-    scan_list: str | None = None  # None = desactivar lista de escaneo
+    scan_list: str | None = None
 
 class RefreshRequest(BaseModel):
     refresh_token: str
@@ -192,6 +184,16 @@ class GrupoUpsert(BaseModel):
     nombre: str
     descripcion: str | None = None
     activo: bool = True
+
+class CarpetaGrupoEntry(BaseModel):
+    gssi: int
+    orden: int = 0
+
+class CarpetaUpsert(BaseModel):
+    nombre: str
+    descripcion: str | None = None
+    orden: int = 0
+    grupos: list[CarpetaGrupoEntry] = []
 
 
 # ------------------------------------------------------------------
@@ -298,7 +300,7 @@ def get_afiliacion(request: Request):
     _require_afiliacion()
     return {
         "gssi":      app_state.afiliacion.gssi,
-        "scan_list": app_state.afiliacion.scan_list,  # null si no hay lista activa
+        "scan_list": app_state.afiliacion.scan_list,
     }
 
 
@@ -362,6 +364,90 @@ def upsert_grupo(request: Request, body: GrupoUpsert):
     if not ok:
         raise HTTPException(status_code=500, detail="Error guardando el grupo")
     return {"status": "ok", "gssi": body.gssi}
+
+
+# ------------------------------------------------------------------
+# Carpetas
+# ------------------------------------------------------------------
+
+@app.get("/folders", dependencies=[Depends(verify_token)])
+@limiter.limit("60/minute")
+def listar_carpetas(request: Request):
+    """Lista todas las carpetas con sus grupos anidados, ordenadas por 'orden'."""
+    _require_grupos()
+    return app_state.grupos.listar_carpetas()
+
+
+@app.get("/folders/{carpeta_id}", dependencies=[Depends(verify_token)])
+@limiter.limit("60/minute")
+def detalle_carpeta(request: Request, carpeta_id: int):
+    """Detalle de una carpeta con sus grupos."""
+    _require_grupos()
+    carpetas = app_state.grupos.listar_carpetas()
+    carpeta  = next((c for c in carpetas if c["id"] == carpeta_id), None)
+    if not carpeta:
+        raise HTTPException(status_code=404, detail="Carpeta no encontrada")
+    return carpeta
+
+
+@app.post("/folders", dependencies=[Depends(verify_token)])
+@limiter.limit("30/minute")
+def upsert_carpeta(request: Request, body: CarpetaUpsert):
+    """
+    Crea o actualiza una carpeta (upsert por nombre) y reemplaza sus grupos.
+    Para actualizar solo los metadatos sin tocar los grupos, omite el campo 'grupos'.
+    """
+    _require_grupos()
+    carpeta_id = app_state.grupos.upsert_carpeta(
+        nombre=body.nombre,
+        descripcion=body.descripcion,
+        orden=body.orden,
+    )
+    if carpeta_id is None:
+        raise HTTPException(status_code=500, detail="Error guardando la carpeta")
+
+    ok = app_state.grupos.set_grupos_carpeta(
+        carpeta_id=carpeta_id,
+        gssi_orden=[{"gssi": g.gssi, "orden": g.orden} for g in body.grupos],
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="Error asignando grupos a la carpeta")
+
+    return {"status": "ok", "id": carpeta_id, "nombre": body.nombre}
+
+
+@app.put("/folders/{carpeta_id}/groups", dependencies=[Depends(verify_token)])
+@limiter.limit("30/minute")
+def actualizar_grupos_carpeta(request: Request, carpeta_id: int, body: list[CarpetaGrupoEntry]):
+    """
+    Reemplaza completamente los grupos de una carpeta existente.
+    No modifica nombre ni descripción de la carpeta.
+    """
+    _require_grupos()
+    carpetas = app_state.grupos.listar_carpetas()
+    if not any(c["id"] == carpeta_id for c in carpetas):
+        raise HTTPException(status_code=404, detail="Carpeta no encontrada")
+
+    ok = app_state.grupos.set_grupos_carpeta(
+        carpeta_id=carpeta_id,
+        gssi_orden=[{"gssi": g.gssi, "orden": g.orden} for g in body],
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="Error actualizando grupos de la carpeta")
+    return {"status": "ok", "id": carpeta_id}
+
+
+@app.delete("/folders/{carpeta_id}", dependencies=[Depends(verify_token)])
+@limiter.limit("30/minute")
+def borrar_carpeta(request: Request, carpeta_id: int):
+    """
+    Elimina una carpeta. Los grupos NO se eliminan, solo se desvinculan.
+    """
+    _require_grupos()
+    ok = app_state.grupos.borrar_carpeta(carpeta_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Carpeta no encontrada")
+    return {"status": "ok", "id": carpeta_id}
 
 
 # ------------------------------------------------------------------

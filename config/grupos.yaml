@@ -1,4 +1,4 @@
-# Catálogo de grupos TETRA (GSSI → nombre) y listas de escaneo.
+# Catálogo de grupos TETRA, carpetas y listas de escaneo.
 # Este fichero se usa SOLO como semilla en el primer arranque.
 # Si la tabla 'grupos' ya tiene datos, este fichero se ignora.
 
@@ -12,9 +12,32 @@ grupos:
   - gssi: 36003
     nombre: "Logística"
     descripcion: "Canal de coordinación logística"
+  - gssi: 36004
+    nombre: "Seguridad"
+    descripcion: "Canal de seguridad"
+
+# Carpetas organizativas — equivalente a las folders de la radio.
+# Un GSSI puede aparecer en varias carpetas.
+carpetas:
+  - nombre: "Operativo"
+    descripcion: "Canales operativos principales"
+    orden: 0
+    grupos:
+      - gssi: 36001
+        orden: 0
+      - gssi: 36003
+        orden: 1
+  - nombre: "Emergencias"
+    descripcion: "Canales de emergencia y seguridad"
+    orden: 1
+    grupos:
+      - gssi: 36002
+        orden: 0
+      - gssi: 36004
+        orden: 1
 
 scan_lists:
   - nombre: "ListaScan1"
     grupos: [36001, 36002, 36003]
   - nombre: "Emergencias"
-    grupos: [36002]
+    grupos: [36002, 36004]

@@ -19,7 +19,7 @@ class GruposDB:
 
     def seed_from_yaml(self, filepath: str | Path) -> bool:
         """
-        Carga grupos y scan lists desde un YAML si las tablas están vacías.
+        Carga grupos, carpetas y scan lists desde un YAML si las tablas están vacías.
         Devuelve True si se insertaron datos, False si ya había datos o hubo error.
         """
         if yaml is None:
@@ -33,11 +33,10 @@ class GruposDB:
 
         conn = self.pool.getconn()
         try:
-            # Comprobación de tabla vacía (lectura simple, sin transacción explícita)
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM grupos")
                 count = cur.fetchone()[0]
-            conn.rollback()  # cerrar la transacción implícita antes de cambiar autocommit
+            conn.rollback()
 
             if count > 0:
                 logger.info("[GruposDB] La tabla grupos ya tiene datos, semilla omitida")
@@ -47,11 +46,12 @@ class GruposDB:
                 data = yaml.safe_load(f) or {}
 
             grupos     = data.get("grupos", [])
+            carpetas   = data.get("carpetas", [])
             scan_lists = data.get("scan_lists", [])
 
-            # Ahora sí podemos cambiar autocommit (no hay transacción abierta)
             conn.autocommit = False
             with conn.cursor() as cur:
+                # Grupos
                 for g in grupos:
                     cur.execute(
                         """
@@ -62,6 +62,34 @@ class GruposDB:
                         (g["gssi"], g["nombre"], g.get("descripcion"))
                     )
 
+                # Carpetas
+                for c in carpetas:
+                    cur.execute(
+                        """
+                        INSERT INTO carpetas (nombre, descripcion, orden)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (nombre) DO NOTHING
+                        RETURNING id
+                        """,
+                        (c["nombre"], c.get("descripcion"), c.get("orden", 0))
+                    )
+                    row = cur.fetchone()
+                    if row is None:
+                        cur.execute("SELECT id FROM carpetas WHERE nombre = %s", (c["nombre"],))
+                        row = cur.fetchone()
+                    carpeta_id = row[0]
+
+                    for entry in c.get("grupos", []):
+                        cur.execute(
+                            """
+                            INSERT INTO carpeta_grupos (carpeta_id, gssi, orden)
+                            VALUES (%s, %s, %s)
+                            ON CONFLICT DO NOTHING
+                            """,
+                            (carpeta_id, entry["gssi"], entry.get("orden", 0))
+                        )
+
+                # Scan lists
                 for sl in scan_lists:
                     cur.execute(
                         """
@@ -89,7 +117,10 @@ class GruposDB:
                         )
 
             conn.commit()
-            logger.info(f"[GruposDB] Semilla cargada: {len(grupos)} grupos, {len(scan_lists)} scan lists")
+            logger.info(
+                f"[GruposDB] Semilla cargada: {len(grupos)} grupos, "
+                f"{len(carpetas)} carpetas, {len(scan_lists)} scan lists"
+            )
             return True
 
         except Exception as e:
@@ -101,7 +132,7 @@ class GruposDB:
             self.pool.putconn(conn)
 
     # ------------------------------------------------------------------
-    # Consultas
+    # Grupos
     # ------------------------------------------------------------------
 
     def get_nombre(self, gssi: int) -> str:
@@ -136,6 +167,168 @@ class GruposDB:
             conn.rollback()
             self.pool.putconn(conn)
 
+    def upsert_grupo(self, gssi: int, nombre: str, descripcion: str | None = None, activo: bool = True) -> bool:
+        """Inserta o actualiza un grupo."""
+        conn = self.pool.getconn()
+        try:
+            conn.autocommit = False
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO grupos (gssi, nombre, descripcion, activo)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (gssi) DO UPDATE
+                        SET nombre      = EXCLUDED.nombre,
+                            descripcion = EXCLUDED.descripcion,
+                            activo      = EXCLUDED.activo
+                    """,
+                    (gssi, nombre, descripcion, activo)
+                )
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"[GruposDB] Error en upsert_grupo gssi={gssi}: {e}")
+            return False
+        finally:
+            conn.autocommit = True
+            self.pool.putconn(conn)
+
+    # ------------------------------------------------------------------
+    # Carpetas
+    # ------------------------------------------------------------------
+
+    def listar_carpetas(self) -> list[dict]:
+        """
+        Devuelve todas las carpetas con sus grupos anidados.
+        Formato: [{id, nombre, descripcion, orden, grupos: [{gssi, nombre, orden}, ...]}, ...]
+        """
+        conn = self.pool.getconn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT
+                        c.id,
+                        c.nombre        AS carpeta_nombre,
+                        c.descripcion   AS carpeta_descripcion,
+                        c.orden         AS carpeta_orden,
+                        g.gssi,
+                        g.nombre        AS grupo_nombre,
+                        cg.orden        AS grupo_orden
+                    FROM carpetas c
+                    LEFT JOIN carpeta_grupos cg ON cg.carpeta_id = c.id
+                    LEFT JOIN grupos g          ON g.gssi = cg.gssi
+                    ORDER BY c.orden, c.nombre, cg.orden, g.gssi
+                """)
+                rows = cur.fetchall()
+
+            result: dict[int, dict] = {}
+            for r in rows:
+                c_id = r["id"]
+                if c_id not in result:
+                    result[c_id] = {
+                        "id":          c_id,
+                        "nombre":      r["carpeta_nombre"],
+                        "descripcion": r["carpeta_descripcion"],
+                        "orden":       r["carpeta_orden"],
+                        "grupos":      [],
+                    }
+                if r["gssi"] is not None:
+                    result[c_id]["grupos"].append({
+                        "gssi":   r["gssi"],
+                        "nombre": r["grupo_nombre"],
+                        "orden":  r["grupo_orden"],
+                    })
+            return list(result.values())
+
+        except Exception as e:
+            logger.error(f"[GruposDB] Error listando carpetas: {e}")
+            return []
+        finally:
+            conn.rollback()
+            self.pool.putconn(conn)
+
+    def upsert_carpeta(self, nombre: str, descripcion: str | None = None, orden: int = 0) -> int | None:
+        """
+        Inserta o actualiza una carpeta. Devuelve el id de la carpeta, o None si hubo error.
+        """
+        conn = self.pool.getconn()
+        try:
+            conn.autocommit = False
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO carpetas (nombre, descripcion, orden)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (nombre) DO UPDATE
+                        SET descripcion = EXCLUDED.descripcion,
+                            orden       = EXCLUDED.orden
+                    RETURNING id
+                    """,
+                    (nombre, descripcion, orden)
+                )
+                carpeta_id = cur.fetchone()[0]
+            conn.commit()
+            return carpeta_id
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"[GruposDB] Error en upsert_carpeta '{nombre}': {e}")
+            return None
+        finally:
+            conn.autocommit = True
+            self.pool.putconn(conn)
+
+    def set_grupos_carpeta(self, carpeta_id: int, gssi_orden: list[dict]) -> bool:
+        """
+        Reemplaza completamente los grupos de una carpeta.
+        gssi_orden: [{gssi: int, orden: int}, ...]
+        """
+        conn = self.pool.getconn()
+        try:
+            conn.autocommit = False
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM carpeta_grupos WHERE carpeta_id = %s", (carpeta_id,))
+                for entry in gssi_orden:
+                    cur.execute(
+                        """
+                        INSERT INTO carpeta_grupos (carpeta_id, gssi, orden)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        (carpeta_id, entry["gssi"], entry.get("orden", 0))
+                    )
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"[GruposDB] Error actualizando grupos de carpeta {carpeta_id}: {e}")
+            return False
+        finally:
+            conn.autocommit = True
+            self.pool.putconn(conn)
+
+    def borrar_carpeta(self, carpeta_id: int) -> bool:
+        """Elimina una carpeta (los grupos NO se eliminan, solo la relación)."""
+        conn = self.pool.getconn()
+        try:
+            conn.autocommit = False
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM carpetas WHERE id = %s", (carpeta_id,))
+                deleted = cur.rowcount
+            conn.commit()
+            return deleted > 0
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"[GruposDB] Error borrando carpeta {carpeta_id}: {e}")
+            return False
+        finally:
+            conn.autocommit = True
+            self.pool.putconn(conn)
+
+    # ------------------------------------------------------------------
+    # Scan lists
+    # ------------------------------------------------------------------
+
     def listar_scan_lists(self) -> list[dict]:
         """
         Devuelve las scan lists con sus grupos anidados.
@@ -149,7 +342,7 @@ class GruposDB:
                         sl.id,
                         sl.nombre AS scan_list,
                         g.gssi,
-                        g.nombre AS grupo_nombre,
+                        g.nombre  AS grupo_nombre,
                         slg.prioridad
                     FROM scan_lists sl
                     LEFT JOIN scan_list_grupos slg ON slg.scan_list_id = sl.id
@@ -176,35 +369,4 @@ class GruposDB:
             return []
         finally:
             conn.rollback()
-            self.pool.putconn(conn)
-
-    # ------------------------------------------------------------------
-    # Escritura
-    # ------------------------------------------------------------------
-
-    def upsert_grupo(self, gssi: int, nombre: str, descripcion: str | None = None, activo: bool = True) -> bool:
-        """Inserta o actualiza un grupo."""
-        conn = self.pool.getconn()
-        try:
-            conn.autocommit = False
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO grupos (gssi, nombre, descripcion, activo)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (gssi) DO UPDATE
-                        SET nombre      = EXCLUDED.nombre,
-                            descripcion = EXCLUDED.descripcion,
-                            activo      = EXCLUDED.activo
-                    """,
-                    (gssi, nombre, descripcion, activo)
-                )
-            conn.commit()
-            return True
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"[GruposDB] Error en upsert_grupo gssi={gssi}: {e}")
-            return False
-        finally:
-            conn.autocommit = True
             self.pool.putconn(conn)
