@@ -116,6 +116,10 @@ app_state.bot = bot
 # ---------------------------
 # Inicializar AudioBuffer
 # ---------------------------
+def _is_hardware_error(msg: str) -> bool:
+    msg = msg.lower()
+    return any(k in msg for k in ["querying device", "ttyusb", "no such file", "puerto", "serial"])
+
 try:
     audio_buffer = AudioBuffer(
         device_index=cfg["audio"].get("device_index", None),
@@ -126,6 +130,10 @@ try:
     )
     logger.info("AudioBuffer inicializado correctamente")
 except Exception as e:
+    if _is_hardware_error(str(e)):
+        logger.warning(f"Dispositivo de audio no disponible: {e}")
+        logger.warning("Revisa 'device_index' en config.yaml. Sal con Ctrl+C y vuelve a arrancar.")
+        sys.exit(0)
     logger.critical(f"No se pudo inicializar AudioBuffer: {e}")
     sys.exit(1)
 
@@ -207,6 +215,10 @@ logger.info("Iniciando PEI con streaming")
 try:
     pei_daemon.escuchar_pei(streamer)
 except RuntimeError as e:
+    if _is_hardware_error(str(e)):
+        logger.warning(f"Hardware no disponible: {e}")
+        logger.warning("Conecta la radio y vuelve a arrancar.")
+        sys.exit(0)
     logger.critical(f"Error en PEI: {e}")
     sys.exit(1)
 except KeyboardInterrupt:
