@@ -20,7 +20,7 @@ class ScanConfig:
                 self.gssi = scan.get("gssi", "")
                 self.scan_list = scan.get("scan_list", "")
                 self._last_mtime = self._filepath.stat().st_mtime
-                logger.info("Scan config leída desde disco")
+                logger.info("Scan config cargada correctamente")
             except yaml.YAMLError as e:
                 logger.error(f"Error leyendo scan config: {e}")
                 self.gssi = ""
