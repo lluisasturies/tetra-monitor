@@ -3,13 +3,20 @@ import requests
 from core.logger import logger
 
 class TelegramBot:
-    def __init__(self, token: str, chat_id: str, max_retries: int = 3):
+    def __init__(self, token: str, chat_id: str, max_retries: int = 3, enabled: bool = True):
         self.token = token
         self.chat_id = chat_id
         self.max_retries = max_retries
+        self.enabled = enabled
         self.base_url = f"https://api.telegram.org/bot{token}"
 
+        logger.info(f"Telegram: {'ACTIVADO' if self.enabled else 'DESACTIVADO'}")
+
     def enviar_alerta(self, grupo: int, ssi: int, texto: str):
+        if not self.enabled:
+            logger.debug("[Telegram] Alerta ignorada — Telegram desactivado")
+            return
+
         mensaje = (
             f"🚨 *Alerta TETRA*\n"
             f"Grupo: `{grupo}`\n"

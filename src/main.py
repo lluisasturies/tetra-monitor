@@ -52,6 +52,7 @@ RETENTION_DAYS = cfg["audio"].get("retention_days", 7)
 # Leer flags de activación
 RECORDING_ENABLED  = cfg["audio"].get("recording_enabled", True)
 PROCESSING_ENABLED = cfg["pei"].get("processing_enabled", True)
+TELEGRAM_ENABLED   = cfg["telegram"].get("enabled", True)
 
 # Sobreescribir credenciales con variables de entorno (tienen prioridad)
 cfg["database"]["password"] = os.getenv("DB_PASSWORD", cfg["database"].get("password", ""))
@@ -64,7 +65,11 @@ cfg["api"]["jwt_secret"]    = os.getenv("JWT_SECRET", cfg["api"].get("jwt_secret
 # Inicializar componentes
 # ---------------------------
 db = Database(**cfg["database"])
-bot = TelegramBot(cfg["telegram"]["token"], cfg["telegram"]["chat_id"])
+bot = TelegramBot(
+    cfg["telegram"]["token"],
+    cfg["telegram"]["chat_id"],
+    enabled=TELEGRAM_ENABLED
+)
 
 try:
     audio_buffer = AudioBuffer(

@@ -33,6 +33,7 @@ streaming:
 #  icecast_url: icecast://source:password@localhost:8000/tetra
 
 telegram:
+  enabled: true    # false → no envía alertas por Telegram
   token: ""         # definir en .env como TELEGRAM_TOKEN
   chat_id: ""       # definir en .env como TELEGRAM_CHAT_ID
 
