@@ -30,22 +30,25 @@ tetra-monitor/
 │       └── schema.sql       # DDL de PostgreSQL
 ├── logs/                    # Logs de la aplicación
 ├── scripts/
-│   ├── setup.sh             # Instalación completa
-│   ├── start.sh             # Arranque del daemon
-│   └── tetra-monitor.service  # Unit file para systemd
+│   ├── setup.sh                          # Instalación completa
+│   ├── start.sh                          # Arranque del daemon
+│   └── tetra-monitor.service.template    # Plantilla del unit file systemd
 ├── Makefile                 # Atajos para operaciones comunes
 └── src/
     ├── main.py              # Punto de entrada (daemon + API en un solo proceso)
+    ├── app_state.py         # Contenedor de dependencias compartidas
     ├── api/
     │   └── api.py           # API REST (FastAPI + JWT)
     ├── audio/
     │   ├── audio_buffer.py  # Captura y grabación de audio
     │   └── audio_cleanup.py # Limpieza automática de ficheros FLAC
     ├── core/
-    │   ├── database.py      # Conexión y queries PostgreSQL
     │   ├── logger.py        # Logger centralizado
     │   ├── scan_config.py   # Config de scan dinámica (mtime IPC)
     │   └── stt_processor.py # Transcripción con Whisper
+    ├── db/
+    │   ├── pool.py          # ThreadedConnectionPool compartido
+    │   └── llamadas.py      # Queries sobre la tabla llamadas
     ├── filters/
     │   └── keyword_filter.py # Filtrado por palabras clave (recarga en caliente)
     ├── integrations/
@@ -87,6 +90,7 @@ DB_PASSWORD=changeme
 TELEGRAM_TOKEN=your_token
 TELEGRAM_CHAT_ID=your_chat_id
 
+# Genera un secreto seguro con: openssl rand -hex 32
 JWT_SECRET=genera_un_secreto_largo_y_aleatorio
 API_USER=admin
 API_PASSWORD=genera_una_contraseña_segura
@@ -120,7 +124,8 @@ make start              # Arranca el monitor en primer plano
 make stop               # Detiene el servicio systemd
 make restart            # Reinicia el servicio systemd
 make status             # Muestra el estado del servicio systemd
-make logs               # Muestra los logs en tiempo real
+make logs               # Muestra los logs en tiempo real (journalctl)
+make logs-file          # Muestra los logs en tiempo real (fichero local)
 make install-service    # Instala tetra-monitor como servicio systemd
 make uninstall-service  # Elimina el servicio systemd
 make update             # git pull + reinicia el servicio
@@ -134,14 +139,16 @@ Para que el daemon arranque automáticamente con la RPi y se reinicie si falla:
 make install-service
 sudo systemctl start tetra-monitor
 ```
-```bash
-make logs     # logs en tiempo real
-make status   # estado del servicio
-make restart  # reiniciar
-make stop     # parar
-```
 
-> **Nota:** Edita `scripts/tetra-monitor.service` y ajusta `User` y `WorkingDirectory` si tu usuario o ruta de instalación no son los predeterminados (`pi` / `/home/pi/tetra-monitor`).
+`make install-service` genera el unit file automáticamente con el usuario actual y la ruta del proyecto — no hace falta editar nada a mano.
+
+```bash
+make logs       # logs en tiempo real (journalctl)
+make logs-file  # logs en tiempo real (fichero local)
+make status     # estado del servicio
+make restart    # reiniciar
+make stop       # parar
+```
 
 ---
 
@@ -153,6 +160,7 @@ Los siguientes componentes pueden activarse y desactivarse desde `config/config.
 | `recording_enabled` | `audio` | No graba ficheros de audio en disco |
 | `processing_enabled` | `pei` | Ignora todos los eventos PEI |
 | `enabled` | `telegram` | No envía alertas por Telegram |
+| `enabled` | `streaming` | No inicia el streaming de audio |
 
 ---
 
@@ -175,8 +183,8 @@ Respuesta:
 |---|---|---|
 | `GET` | `/health` | Healthcheck público |
 | `POST` | `/auth/token` | Obtener token JWT |
-| `GET` | `/events` | Listar eventos (param: `limit`) |
-| `GET` | `/events/{id}` | Detalle de un evento |
+| `GET` | `/calls` | Listar llamadas (param: `limit`) |
+| `GET` | `/calls/{id}` | Detalle de una llamada |
 | `GET` | `/scan-config` | Ver GSSI y scan list activos |
 | `POST` | `/update-gssi` | Cambiar GSSI activo |
 | `POST` | `/update-scanlist` | Cambiar scan list |
@@ -186,7 +194,7 @@ Respuesta:
 TOKEN=$(curl -s -X POST http://raspberrypi:8000/auth/token \
   -d "username=admin&password=tu_password" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-curl -H "Authorization: Bearer $TOKEN" http://raspberrypi:8000/events?limit=10
+curl -H "Authorization: Bearer $TOKEN" http://raspberrypi:8000/calls?limit=10
 
 curl -X POST \
   -H "Authorization: Bearer $TOKEN" \
@@ -201,9 +209,11 @@ curl -X POST \
 El sistema corre en **un único proceso** con dos componentes concurrentes:
 
 - **Daemon PEI** — escucha la radio por puerto serie, graba audio, transcribe y alerta
-- **API REST** — corre en un hilo separado, expone endpoints para consultar eventos y modificar la configuración
+- **API REST** — corre en un hilo separado, expone endpoints para consultar llamadas y modificar la configuración
 
 La comunicación entre ambos se hace a través de `config/scan.yaml`. Cuando la API actualiza el GSSI o la scan list, escribe en el fichero. El daemon comprueba el `mtime` cada 5 segundos y aplica los cambios a la radio si detecta modificaciones. Lo mismo aplica a `config/keywords.yaml`, que también se recarga en caliente.
+
+Solo las llamadas que contienen alguna palabra clave se guardan en base de datos y generan alerta por Telegram. El audio de llamadas sin keyword se elimina automáticamente.
 
 ---
 
