@@ -213,7 +213,7 @@ signal.signal(signal.SIGTERM, signal_handler)
 # ---------------------------
 # Ejecutar PEI Daemon
 # ---------------------------
-logger.info("Iniciando PEI...")
+logger.info("Iniciando escucha PEI con streaming...")
 
 try:
     pei_daemon.escuchar_pei(streamer)
