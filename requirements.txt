@@ -1,27 +1,27 @@
 # Audio
-sounddevice
-soundfile
-numpy
+sounddevice==0.4.6
+soundfile==0.12.1
+numpy==1.26.4
 
 # STT
-openai-whisper
+openai-whisper==20231117
 
 # Base de datos
-psycopg2-binary
+psycopg2-binary==2.9.9
 
 # API
-fastapi
-uvicorn[standard]
-pydantic
-python-jose[cryptography]
-python-multipart
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.9
 
 # Comunicación serie
-pyserial
+pyserial==3.5
 
 # Configuración
-pyyaml
-python-dotenv
+pyyaml==6.0.1
+python-dotenv==1.0.1
 
 # Telegram
-requests
+requests==2.31.0
