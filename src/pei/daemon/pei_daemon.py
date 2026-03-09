@@ -35,11 +35,7 @@ class PEIDaemon:
         self._cleanup = AudioCleanup(audio_output_dir, retention_days)
         self._init_radio()
 
-        logger.info(f"Grabación de audio: {'ACTIVADO'  if self.recording_enabled  else 'DESACTIVADO'}")
-        logger.info(f"Procesado PEI:      {'ACTIVADO'  if self.processing_enabled else 'DESACTIVADO'}")
-
     def _apply_scan_config(self):
-        """Aplica gssi y scan_list a la radio. Solo llamar cuando self.radio está activo."""
         logger.info(
             f"[PEI] Aplicando scan config a la radio — "
             f"gssi='{self.scan_config.gssi}', scan_list='{self.scan_config.scan_list}'"
@@ -88,7 +84,6 @@ class PEIDaemon:
                 self._apply_scan_config()
 
     def _process_audio(self, path: str, grupo: int, ssi: int):
-        """Corre en un hilo del executor — no bloquea el bucle PEI."""
         try:
             texto = self.stt_processor.transcribe(path)
             logger.info(f"Transcripción (grupo={grupo}, ssi={ssi}): {texto}")

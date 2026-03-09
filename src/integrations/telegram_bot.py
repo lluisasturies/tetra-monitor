@@ -8,10 +8,8 @@ class TelegramBot:
         self.token = token
         self.chat_id = chat_id
         self.max_retries = max_retries
-        self.enabled = enabled       # permiso global desde config.yaml
-        self.radio_active = False    # activado por el daemon cuando la radio conecta
-
-        logger.info(f"Telegram: {'ACTIVADO' if self.enabled else 'DESACTIVADO'}")
+        self.enabled = enabled
+        self.radio_active = False
 
     def enviar_alerta(self, grupo: int, ssi: int, texto: str):
         if not self.enabled:
@@ -50,6 +48,6 @@ class TelegramBot:
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error enviando Telegram (intento {intento}): {e}")
 
-            time.sleep(2 ** intento)  # backoff exponencial: 2s, 4s, 8s
+            time.sleep(2 ** intento)
 
         logger.error("No se pudo enviar la alerta por Telegram tras todos los reintentos")

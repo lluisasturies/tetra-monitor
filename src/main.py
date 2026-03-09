@@ -23,8 +23,8 @@ from app_state import app_state
 from api.api import app
 
 print()
-print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀█░░░░░█▄█░█▀█░█▀█░▀█▀░▀█▀░█▀█░█▀▄")
-print("░░█░░█▀▀░░█░░█▀▄░█▀█░▄▄▄░█░█░█░█░█░█░░█░░░█░░█░█░█▀▄")
+print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀▀░░░░░█▄█░█▀▀░█▀▀░▀█▀░▀█▀░█▀▀░█▀▄")
+print("░░█░░█▀▀░░█░░█▀▄░█▀▀░▄▄▄░█░█░█░░░█░█░░█░░░█░░█░█░█▀▄")
 print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀░▀░▀▀▀░░▀░░▀▀▀░▀░▀")
 print("2026 © Lluis de la Rubia / LluisAsturies")
 print()
@@ -131,7 +131,6 @@ try:
         prebuffer_seconds=cfg["audio"]["prebuffer_seconds"],
         output_dir=AUDIO_OUTPUT_DIR
     )
-    logger.info("AudioBuffer inicializado correctamente")
 except Exception as e:
     if _is_hardware_error(str(e)):
         logger.warning(f"Dispositivo de audio no disponible: {e}")
@@ -167,6 +166,24 @@ pei_daemon = PEIDaemon(
 )
 
 # ---------------------------
+# Resumen de configuración activa
+# ---------------------------
+streamer = None
+stream_cfg = cfg.get("streaming", {})
+if stream_cfg.get("enabled", False):
+    stream_cfg["samplerate"] = cfg["audio"]["sample_rate"]
+    stream_cfg["channels"]   = cfg["audio"]["channels"]
+    streamer = create_streamer(stream_cfg)
+
+logger.info(f"Grabación de audio : {'ACTIVADA'  if RECORDING_ENABLED  else 'DESACTIVADA'}")
+logger.info(f"Procesado PEI      : {'ACTIVADO'  if PROCESSING_ENABLED else 'DESACTIVADO'}")
+logger.info(f"Telegram           : {'ACTIVADO'  if TELEGRAM_ENABLED   else 'DESACTIVADO'}")
+if streamer:
+    logger.info(f"Streaming          : ACTIVADO ({streamer.__class__.__name__})")
+else:
+    logger.info("Streaming          : DESACTIVADO")
+
+# ---------------------------
 # Arrancar API en hilo separado
 # ---------------------------
 def _run_api():
@@ -180,23 +197,6 @@ def _run_api():
 api_thread = threading.Thread(target=_run_api, daemon=True)
 api_thread.start()
 logger.info(f"API arrancada en {cfg['api']['host']}:{cfg['api']['port']}")
-
-# ---------------------------
-# Inicializar Streaming
-# ---------------------------
-streamer = None
-stream_cfg = cfg.get("streaming", {})
-
-if stream_cfg.get("enabled", False):
-    stream_cfg["samplerate"] = cfg["audio"]["sample_rate"]
-    stream_cfg["channels"]   = cfg["audio"]["channels"]
-    streamer = create_streamer(stream_cfg)
-    if streamer:
-        logger.info(f"Streaming inicializado correctamente ({streamer.__class__.__name__})")
-    else:
-        logger.info("Streaming habilitado pero no se encontró URL válida")
-else:
-    logger.info("Streaming deshabilitado en config.yaml")
 
 # ---------------------------
 # Manejo de Ctrl+C y SIGTERM
