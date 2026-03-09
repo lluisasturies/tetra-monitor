@@ -168,20 +168,22 @@ pei_daemon = PEIDaemon(
 # ---------------------------
 # Resumen de configuración activa
 # ---------------------------
-streamer = None
 stream_cfg = cfg.get("streaming", {})
-if stream_cfg.get("enabled", False):
-    stream_cfg["samplerate"] = cfg["audio"]["sample_rate"]
-    stream_cfg["channels"]   = cfg["audio"]["channels"]
-    streamer = create_streamer(stream_cfg)
+STREAMING_ENABLED = stream_cfg.get("enabled", False)
 
 logger.info(f"Grabación de audio : {'ACTIVADA'  if RECORDING_ENABLED  else 'DESACTIVADA'}")
 logger.info(f"Procesado PEI      : {'ACTIVADO'  if PROCESSING_ENABLED else 'DESACTIVADO'}")
 logger.info(f"Telegram           : {'ACTIVADO'  if TELEGRAM_ENABLED   else 'DESACTIVADO'}")
-if streamer:
-    logger.info(f"Streaming          : ACTIVADO ({streamer.__class__.__name__})")
-else:
-    logger.info("Streaming          : DESACTIVADO")
+logger.info(f"Streaming          : {'ACTIVADO'  if STREAMING_ENABLED  else 'DESACTIVADO'}")
+
+# ---------------------------
+# Inicializar Streaming
+# ---------------------------
+streamer = None
+if STREAMING_ENABLED:
+    stream_cfg["samplerate"] = cfg["audio"]["sample_rate"]
+    stream_cfg["channels"]   = cfg["audio"]["channels"]
+    streamer = create_streamer(stream_cfg)
 
 # ---------------------------
 # Arrancar API en hilo separado
