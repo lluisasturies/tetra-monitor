@@ -2,10 +2,11 @@
 #   TETRA Monitor — Makefile
 # ==============================
 
-PROJECT_ROOT := $(shell pwd)
-SERVICE_NAME := tetra-monitor
-SERVICE_FILE := $(PROJECT_ROOT)/scripts/tetra-monitor.service
-SERVICE_DEST := /etc/systemd/system/$(SERVICE_NAME).service
+PROJECT_ROOT  := $(shell pwd)
+SERVICE_NAME  := tetra-monitor
+SERVICE_TMPL  := $(PROJECT_ROOT)/scripts/tetra-monitor.service.template
+SERVICE_DEST  := /etc/systemd/system/$(SERVICE_NAME).service
+CURRENT_USER  := $(shell logname 2>/dev/null || echo $$SUDO_USER || echo $$USER)
 
 .PHONY: help setup start stop restart logs install-service uninstall-service update status
 
@@ -18,7 +19,8 @@ help:
 	@echo "  make stop               Detiene el servicio systemd"
 	@echo "  make restart            Reinicia el servicio systemd"
 	@echo "  make status             Muestra el estado del servicio systemd"
-	@echo "  make logs               Muestra los logs en tiempo real"
+	@echo "  make logs               Muestra los logs en tiempo real (journalctl)"
+	@echo "  make logs-file          Muestra los logs en tiempo real (fichero)"
 	@echo "  make install-service    Instala tetra-monitor como servicio systemd"
 	@echo "  make uninstall-service  Elimina el servicio systemd"
 	@echo "  make update             git pull + reinicia el servicio"
@@ -42,11 +44,18 @@ status:
 logs:
 	sudo journalctl -u $(SERVICE_NAME) -f --output=cat
 
+logs-file:
+	tail -f $(PROJECT_ROOT)/logs/tetra_monitor.log
+
 install-service:
-	sudo cp $(SERVICE_FILE) $(SERVICE_DEST)
+	@echo "Instalando servicio para usuario '$(CURRENT_USER)' en $(PROJECT_ROOT)..."
+	sed \
+		-e 's|@@PROJECT_ROOT@@|$(PROJECT_ROOT)|g' \
+		-e 's|@@USER@@|$(CURRENT_USER)|g' \
+		$(SERVICE_TMPL) | sudo tee $(SERVICE_DEST) > /dev/null
 	sudo systemctl daemon-reload
 	sudo systemctl enable $(SERVICE_NAME)
-	@echo "Servicio instalado. Arranca con: make start-service o sudo systemctl start $(SERVICE_NAME)"
+	@echo "Servicio instalado. Arranca con: sudo systemctl start $(SERVICE_NAME)"
 
 uninstall-service:
 	sudo systemctl stop $(SERVICE_NAME) || true

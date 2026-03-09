@@ -1,0 +1,26 @@
+[Unit]
+Description=TETRA Monitor — PEI Daemon
+Documentation=https://github.com/lluisasturies/tetra-monitor
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=@@USER@@
+Group=@@USER@@
+WorkingDirectory=@@PROJECT_ROOT@@
+ExecStart=@@PROJECT_ROOT@@/scripts/start.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tetra-monitor
+
+# Evitar que el proceso acumule demasiados ficheros abiertos
+LimitNOFILE=4096
+
+# Dar acceso al puerto serie
+SupplementaryGroups=dialout
+
+[Install]
+WantedBy=multi-user.target
