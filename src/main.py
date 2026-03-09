@@ -171,10 +171,10 @@ pei_daemon = PEIDaemon(
 stream_cfg = cfg.get("streaming", {})
 STREAMING_ENABLED = stream_cfg.get("enabled", False)
 
-logger.info(f"Grabación de audio : {'ACTIVADA'  if RECORDING_ENABLED  else 'DESACTIVADA'}")
-logger.info(f"Procesado PEI      : {'ACTIVADO'  if PROCESSING_ENABLED else 'DESACTIVADO'}")
-logger.info(f"Telegram           : {'ACTIVADO'  if TELEGRAM_ENABLED   else 'DESACTIVADO'}")
-logger.info(f"Streaming          : {'ACTIVADO'  if STREAMING_ENABLED  else 'DESACTIVADO'}")
+logger.info(f"Grabación de audio       : {'ACTIVADA'  if RECORDING_ENABLED  else 'DESACTIVADA'}")
+logger.info(f"Procesado PEI            : {'ACTIVADO'  if PROCESSING_ENABLED else 'DESACTIVADO'}")
+logger.info(f"Notificaciones Telegram  : {'ACTIVADAS' if TELEGRAM_ENABLED   else 'DESACTIVADAS'}")
+logger.info(f"Streaming                : {'ACTIVADO'  if STREAMING_ENABLED  else 'DESACTIVADO'}")
 
 # ---------------------------
 # Arrancar API en hilo separado
