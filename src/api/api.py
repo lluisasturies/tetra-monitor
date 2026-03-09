@@ -1,6 +1,7 @@
 import os
 import secrets
 import bcrypt
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse
@@ -34,8 +35,81 @@ REFRESH_TOKEN_DAYS = 7
 _cors_env = os.getenv("CORS_ORIGINS", "")
 CORS_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()] or ["http://localhost"]
 
+
+# ------------------------------------------------------------------
+# Startup autónomo — solo actúa si main.py no ha inicializado el estado
+# ------------------------------------------------------------------
+
+def _init_standalone():
+    """
+    Inicializa el pool, repositorios y afiliacion config cuando la API
+    arranca de forma independiente (desarrollo / testing sin main.py).
+    Si app_state ya está inicializado (arrancado desde main.py), no hace nada.
+    """
+    if app_state.pool is not None:
+        return  # ya inicializado por main.py
+
+    import yaml
+    from pathlib import Path
+    from db.pool import DBPool
+    from db.llamadas import LlamadasDB
+    from db.grupos import GruposDB
+    from core.afiliacion import AfiliacionConfig
+
+    logger.info("[API standalone] Inicializando dependencias sin main.py...")
+
+    PROJECT_ROOT    = Path(__file__).resolve().parents[2]
+    CONFIG_PATH     = PROJECT_ROOT / "config" / "config.yaml"
+    AFILIACION_PATH = PROJECT_ROOT / "config" / "afiliacion.yaml"
+    GRUPOS_PATH     = PROJECT_ROOT / "config" / "grupos.yaml"
+
+    try:
+        with open(CONFIG_PATH) as f:
+            cfg = yaml.safe_load(f)
+    except Exception as e:
+        logger.error(f"[API standalone] No se pudo leer config.yaml: {e}")
+        return
+
+    db_user     = os.getenv("DB_USER", "")
+    db_password = os.getenv("DB_PASSWORD", "")
+
+    try:
+        pool = DBPool(
+            host=cfg["database"]["host"],
+            port=cfg["database"]["port"],
+            dbname=cfg["database"]["dbname"],
+            user=db_user,
+            password=db_password,
+        )
+    except Exception as e:
+        logger.error(f"[API standalone] No se pudo conectar a la BD: {e}")
+        return
+
+    llamadas_db = LlamadasDB(pool)
+    grupos_db   = GruposDB(pool)
+    afiliacion  = AfiliacionConfig(AFILIACION_PATH)
+
+    app_state.pool      = pool
+    app_state.llamadas  = llamadas_db
+    app_state.grupos    = grupos_db
+    app_state.afiliacion = afiliacion
+
+    grupos_db.seed_from_yaml(GRUPOS_PATH)
+    logger.info("[API standalone] Dependencias inicializadas correctamente")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _init_standalone()
+    yield
+
+
+# ------------------------------------------------------------------
+# App
+# ------------------------------------------------------------------
+
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(title="TETRA Monitor API", version="1.0.0")
+app = FastAPI(title="TETRA Monitor API", version="1.0.0", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
