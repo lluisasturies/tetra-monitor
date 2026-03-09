@@ -47,7 +47,7 @@ def _init_standalone():
     Si app_state ya está inicializado (arrancado desde main.py), no hace nada.
     """
     if app_state.pool is not None:
-        return  # ya inicializado por main.py
+        return
 
     import yaml
     from pathlib import Path
@@ -89,9 +89,9 @@ def _init_standalone():
     grupos_db   = GruposDB(pool)
     afiliacion  = AfiliacionConfig(AFILIACION_PATH)
 
-    app_state.pool      = pool
-    app_state.llamadas  = llamadas_db
-    app_state.grupos    = grupos_db
+    app_state.pool       = pool
+    app_state.llamadas   = llamadas_db
+    app_state.grupos     = grupos_db
     app_state.afiliacion = afiliacion
 
     grupos_db.seed_from_yaml(GRUPOS_PATH)
@@ -182,7 +182,7 @@ class GSSIUpdate(BaseModel):
     gssi: str
 
 class ScanListUpdate(BaseModel):
-    scan_list: str
+    scan_list: str | None = None  # None = desactivar lista de escaneo
 
 class RefreshRequest(BaseModel):
     refresh_token: str
@@ -298,7 +298,7 @@ def get_afiliacion(request: Request):
     _require_afiliacion()
     return {
         "gssi":      app_state.afiliacion.gssi,
-        "scan_list": app_state.afiliacion.scan_list,
+        "scan_list": app_state.afiliacion.scan_list,  # null si no hay lista activa
     }
 
 

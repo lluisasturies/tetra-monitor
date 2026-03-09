@@ -1,5 +1,7 @@
 # Afiliación activa del radio: GSSI y scan list programados en este momento.
 # Modificable en caliente via API — el daemon recarga automáticamente cada 5s.
+#
+# scan_list puede ser null o omitirse si no hay lista de escaneo activa.
 afiliacion:
   gssi: "36001"
-  scan_list: "ListaScan1"
+  scan_list: "ListaScan1"  # null para desactivar la lista de escaneo
