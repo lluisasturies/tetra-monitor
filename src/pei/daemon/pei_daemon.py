@@ -88,18 +88,17 @@ class PEIDaemon:
         try:
             texto = self.stt_processor.transcribe(path)
             logger.info(f"Transcripción (grupo={grupo}, ssi={ssi}): {texto}")
+            calls_logger.info(f"TRANSCRIPCION | grupo={grupo} | ssi={ssi} | texto=\"{texto}\"")
 
             tiene_keyword = self.keyword_filter.contiene_evento(texto)
 
             if self.save_all_calls:
-                # Guarda siempre, alerta solo si tiene keyword
                 self.llamadas_db.guardar(grupo, ssi, texto, path)
                 if tiene_keyword:
                     self.bot.enviar_alerta(grupo, ssi, texto)
                 else:
                     logger.debug(f"Llamada guardada sin keyword (grupo={grupo}, ssi={ssi})")
             else:
-                # Comportamiento por defecto: guarda y alerta solo con keyword
                 if tiene_keyword:
                     self.llamadas_db.guardar(grupo, ssi, texto, path)
                     self.bot.enviar_alerta(grupo, ssi, texto)
