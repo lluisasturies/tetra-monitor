@@ -1,4 +1,5 @@
 import os
+import secrets
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse
@@ -24,8 +25,9 @@ if not JWT_SECRET:
 if not API_USER or not API_PASSWORD:
     raise RuntimeError("API_USER y API_PASSWORD deben estar definidos en .env")
 
-JWT_ALGORITHM    = "HS256"
-JWT_EXPIRY_HOURS = 24
+JWT_ALGORITHM         = "HS256"
+ACCESS_TOKEN_HOURS    = 1
+REFRESH_TOKEN_DAYS    = 7
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="TETRA Monitor API", version="1.0.0")
@@ -35,10 +37,18 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
-def create_access_token(data: dict) -> str:
-    payload = data.copy()
-    payload["exp"] = datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+def create_access_token(username: str) -> str:
+    payload = {
+        "sub": username,
+        "exp": datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_HOURS),
+    }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def create_refresh_token() -> str:
+    token = secrets.token_hex(32)
+    app_state.refresh_tokens.add(token)
+    return token
 
 
 def verify_token(token: str = Depends(oauth2_scheme)):
@@ -56,9 +66,11 @@ def verify_token(token: str = Depends(oauth2_scheme)):
 class GSSIUpdate(BaseModel):
     gssi: str
 
-
 class ScanListUpdate(BaseModel):
     scan_list: str
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 @app.get("/health")
@@ -71,13 +83,48 @@ def health(request: Request):
 @app.post("/auth/token")
 @limiter.limit("5/minute")
 def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
-    """Obtener un token JWT con usuario y contraseña"""
+    """Obtener access token y refresh token con usuario y contraseña"""
     if form_data.username != API_USER or form_data.password != API_PASSWORD:
         logger.warning(f"Intento de login fallido para usuario '{form_data.username}'")
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
-    token = create_access_token({"sub": form_data.username})
-    logger.info(f"Token JWT generado para '{form_data.username}'")
-    return {"access_token": token, "token_type": "bearer"}
+    access_token  = create_access_token(form_data.username)
+    refresh_token = create_refresh_token()
+    logger.info(f"Login correcto para '{form_data.username}'")
+    return {
+        "access_token":  access_token,
+        "refresh_token": refresh_token,
+        "token_type":    "bearer",
+        "expires_in":    ACCESS_TOKEN_HOURS * 3600,
+    }
+
+
+@app.post("/auth/refresh")
+@limiter.limit("10/minute")
+def refresh(request: Request, body: RefreshRequest):
+    """Obtener un nuevo access token usando el refresh token"""
+    if body.refresh_token not in app_state.refresh_tokens:
+        logger.warning("Intento de refresh con token inválido o ya usado")
+        raise HTTPException(status_code=401, detail="Refresh token inválido o expirado")
+    # Rotación: invalida el token usado y emite uno nuevo
+    app_state.refresh_tokens.discard(body.refresh_token)
+    new_refresh = create_refresh_token()
+    access_token = create_access_token(API_USER)
+    logger.info("Access token renovado correctamente")
+    return {
+        "access_token":  access_token,
+        "refresh_token": new_refresh,
+        "token_type":    "bearer",
+        "expires_in":    ACCESS_TOKEN_HOURS * 3600,
+    }
+
+
+@app.post("/auth/logout")
+@limiter.limit("10/minute")
+def logout(request: Request, body: RefreshRequest):
+    """Invalidar el refresh token (cierre de sesión)"""
+    app_state.refresh_tokens.discard(body.refresh_token)
+    logger.info("Sesión cerrada correctamente")
+    return {"status": "ok"}
 
 
 @app.get("/calls", dependencies=[Depends(verify_token)])

@@ -14,6 +14,7 @@ class AppState:
     llamadas: LlamadasDB | None = None
     bot: TelegramBot | None = None
     scan_config: ScanConfig | None = None
+    refresh_tokens: set[str] = set()  # tokens válidos en memoria
 
 
 app_state = AppState()
