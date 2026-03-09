@@ -1,3 +1,4 @@
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from core.logger import logger, calls_logger
@@ -86,6 +87,14 @@ class PEIDaemon:
             if self.keyword_filter.contiene_evento(texto):
                 self.llamadas_db.guardar(grupo, ssi, texto, path)
                 self.bot.enviar_alerta(grupo, ssi, texto)
+            else:
+                # Sin keyword — el audio no se conserva
+                try:
+                    os.remove(path)
+                    logger.debug(f"Audio sin keyword eliminado: {path}")
+                except Exception as e:
+                    logger.warning(f"No se pudo eliminar audio sin keyword {path}: {e}")
+
         except Exception as e:
             logger.error(f"Error en transcripción async (grupo={grupo}, ssi={ssi}): {e}")
 
