@@ -1,6 +1,7 @@
 import subprocess
 from core.logger import logger
 
+
 class BaseStreamer:
     def __init__(self, url: str, samplerate: int = 48000, channels: int = 1):
         self.url = url
@@ -8,6 +9,7 @@ class BaseStreamer:
         self.channels = channels
         self.process = None
         self.running = False
+        self.start()
 
     def build_ffmpeg_cmd(self) -> list:
         raise NotImplementedError
@@ -23,15 +25,12 @@ class BaseStreamer:
         logger.info(f"Streaming iniciado -> {self.url}")
 
     def send_audio(self, audio):
-        self.write(audio)
-
-    def write(self, audio):
         if not self.running or not self.process:
             return
         try:
             self.process.stdin.write(audio.tobytes())
         except Exception as e:
-            logger.error(f"Error enviando audio: {e}")
+            logger.error(f"Error enviando audio al streamer: {e}")
             self.restart()
 
     def restart(self):
