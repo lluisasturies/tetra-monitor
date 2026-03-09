@@ -5,13 +5,13 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from jose import JWTError, jwt
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
@@ -31,16 +31,22 @@ JWT_ALGORITHM      = "HS256"
 ACCESS_TOKEN_HOURS = 1
 REFRESH_TOKEN_DAYS = 7
 
+# CORS — orígenes permitidos desde .env (separados por coma)
+# Ejemplo: CORS_ORIGINS=http://192.168.1.100:3000,https://mi-panel.local
+# Si no se define, solo se permite localhost en desarrollo
+_cors_env = os.getenv("CORS_ORIGINS", "")
+CORS_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()] or ["http://localhost"]
+
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="TETRA Monitor API", version="1.0.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # en producción pon tu frontend
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
@@ -49,6 +55,15 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 def _safe_username(username: str) -> str:
     cleaned = username[:32]
     return cleaned if len(username) <= 32 else cleaned + "…"
+
+
+def _require_llamadas():
+    if app_state.llamadas is None:
+        raise HTTPException(status_code=503, detail="Servicio no disponible aún")
+
+def _require_scan_config():
+    if app_state.scan_config is None:
+        raise HTTPException(status_code=503, detail="Servicio no disponible aún")
 
 
 def create_access_token(username: str) -> str:
@@ -140,6 +155,7 @@ def logout(request: Request, body: RefreshRequest):
 @app.get("/calls", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def listar_llamadas(request: Request, limit: int = Query(default=50, ge=1, le=500)):
+    _require_llamadas()
     llamadas = app_state.llamadas.listar(limit)
     return JSONResponse([dict(l) for l in llamadas])
 
@@ -147,6 +163,7 @@ def listar_llamadas(request: Request, limit: int = Query(default=50, ge=1, le=50
 @app.get("/calls/{llamada_id}", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def llamada_detalle(request: Request, llamada_id: int):
+    _require_llamadas()
     llamada = app_state.llamadas.obtener(llamada_id)
     if not llamada:
         raise HTTPException(status_code=404, detail="Llamada no encontrada")
@@ -156,6 +173,7 @@ def llamada_detalle(request: Request, llamada_id: int):
 @app.post("/update-gssi", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def update_gssi(request: Request, update: GSSIUpdate):
+    _require_scan_config()
     try:
         app_state.scan_config.update_gssi(update.gssi)
     except ValueError as e:
@@ -166,6 +184,7 @@ def update_gssi(request: Request, update: GSSIUpdate):
 @app.post("/update-scanlist", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def update_scanlist(request: Request, update: ScanListUpdate):
+    _require_scan_config()
     try:
         app_state.scan_config.update_scan_list(update.scan_list)
     except ValueError as e:
@@ -176,4 +195,5 @@ def update_scanlist(request: Request, update: ScanListUpdate):
 @app.get("/scan-config", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def get_scan_config(request: Request):
+    _require_scan_config()
     return {"gssi": app_state.scan_config.gssi, "scan_list": app_state.scan_config.scan_list}
