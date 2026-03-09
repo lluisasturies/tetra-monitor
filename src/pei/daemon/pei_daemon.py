@@ -38,15 +38,23 @@ class PEIDaemon:
         logger.info(f"Grabación de audio: {'ACTIVADA'  if self.recording_enabled  else 'DESACTIVADA'}")
         logger.info(f"Procesado PEI:      {'ACTIVADO'  if self.processing_enabled else 'DESACTIVADO'}")
 
+    def _apply_scan_config(self):
+        """Aplica gssi y scan_list a la radio. Solo llamar cuando self.radio está activo."""
+        logger.info(
+            f"[PEI] Aplicando scan config a la radio — "
+            f"gssi='{self.scan_config.gssi}', scan_list='{self.scan_config.scan_list}'"
+        )
+        if self.scan_config.gssi:
+            self.radio.set_active_gssi(self.scan_config.gssi)
+        if self.scan_config.scan_list:
+            self.radio.set_scan_list(self.scan_config.scan_list)
+
     def _init_radio(self):
         puerto = self.port or "/dev/ttyUSB0"
         try:
             self.radio = self.motorola_pei_cls(puerto, self.baudrate)
             logger.info(f"Motorola PEI inicializado en {puerto}")
-            if self.scan_config.gssi:
-                self.radio.set_active_gssi(self.scan_config.gssi)
-            if self.scan_config.scan_list:
-                self.radio.set_scan_list(self.scan_config.scan_list)
+            self._apply_scan_config()
         except Exception as e:
             logger.critical(f"No se pudo inicializar PEI en {puerto}: {e}")
             self.radio = None
@@ -72,12 +80,8 @@ class PEIDaemon:
             return
         self._last_config_check = now
         if self.scan_config.reload_if_changed():
-            logger.info("[PEI] Aplicando nuevo scan config a la radio")
             if self.radio:
-                if self.scan_config.gssi:
-                    self.radio.set_active_gssi(self.scan_config.gssi)
-                if self.scan_config.scan_list:
-                    self.radio.set_scan_list(self.scan_config.scan_list)
+                self._apply_scan_config()
 
     def _process_audio(self, path: str, grupo: int, ssi: int):
         """Corre en un hilo del executor — no bloquea el bucle PEI."""
@@ -89,7 +93,6 @@ class PEIDaemon:
                 self.llamadas_db.guardar(grupo, ssi, texto, path)
                 self.bot.enviar_alerta(grupo, ssi, texto)
             else:
-                # Sin keyword — el audio no se conserva
                 try:
                     os.remove(path)
                     logger.debug(f"Audio sin keyword eliminado: {path}")
