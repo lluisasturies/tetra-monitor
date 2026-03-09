@@ -9,13 +9,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from core.logger import logger, set_level
-from core.scan_config import ScanConfig
+from core.radio_config import RadioConfig
 from audio.audio_buffer import AudioBuffer
 from core.stt_processor import STTProcessor
 from filters.keyword_filter import KeywordFilter
 from integrations.telegram_bot import TelegramBot
 from db.pool import DBPool
 from db.llamadas import LlamadasDB
+from db.grupos import GruposDB
 from pei.hardware.pei_motorola import MotorolaPEI
 from pei.daemon.pei_daemon import PEIDaemon
 from streaming import create_streamer
@@ -35,6 +36,7 @@ PROJECT_ROOT  = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CONFIG_PATH   = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 KEYWORDS_PATH = os.path.join(PROJECT_ROOT, "config", "keywords.yaml")
 SCAN_PATH     = os.path.join(PROJECT_ROOT, "config", "scan.yaml")
+GRUPOS_PATH   = os.path.join(PROJECT_ROOT, "config", "grupos.yaml")
 
 # ---------------------------
 # Cargar configuración
@@ -96,10 +98,10 @@ except RuntimeError as e:
     sys.exit(1)
 
 # ---------------------------
-# Inicializar scan config
+# Inicializar radio config
 # ---------------------------
-scan_config = ScanConfig(SCAN_PATH)
-app_state.scan_config = scan_config
+radio_config = RadioConfig(SCAN_PATH)
+app_state.radio_config = radio_config
 
 # ---------------------------
 # Inicializar pool y repositorios
@@ -112,9 +114,14 @@ pool = DBPool(
     password=DB_PASSWORD,
 )
 llamadas_db = LlamadasDB(pool)
+grupos_db   = GruposDB(pool)
 
 app_state.pool     = pool
 app_state.llamadas = llamadas_db
+app_state.grupos   = grupos_db
+
+# Cargar semilla de grupos si la tabla está vacía
+grupos_db.seed_from_yaml(GRUPOS_PATH)
 
 # ---------------------------
 # Inicializar bot
@@ -168,7 +175,7 @@ pei_daemon = PEIDaemon(
     stt_processor=stt,
     keyword_filter=kf,
     llamadas_db=llamadas_db,
-    scan_config=scan_config,
+    scan_config=radio_config,
     bot=bot,
     port=cfg["pei"].get("port", ""),
     baudrate=cfg["pei"]["baudrate"],

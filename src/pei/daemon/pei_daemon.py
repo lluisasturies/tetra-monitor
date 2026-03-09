@@ -2,7 +2,7 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from core.logger import logger, calls_logger
-from core.scan_config import ScanConfig
+from core.radio_config import RadioConfig
 from audio.audio_cleanup import AudioCleanup
 from pei.models.pei_event import PEIEvent
 from db.llamadas import LlamadasDB
@@ -13,7 +13,7 @@ STT_MAX_WORKERS = 1
 
 class PEIDaemon:
     def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter,
-                 llamadas_db: LlamadasDB, scan_config: ScanConfig, bot,
+                 llamadas_db: LlamadasDB, scan_config: RadioConfig, bot,
                  port="", baudrate=9600, audio_output_dir="", retention_days=7,
                  recording_enabled=True, processing_enabled=True, save_all_calls=False):
         self.motorola_pei_cls = motorola_pei_cls
@@ -38,7 +38,7 @@ class PEIDaemon:
 
     def _apply_scan_config(self):
         logger.info(
-            f"[PEI] Aplicando scan config a la radio — "
+            f"[PEI] Aplicando radio config — "
             f"gssi='{self.scan_config.gssi}', scan_list='{self.scan_config.scan_list}'"
         )
         if self.scan_config.gssi:

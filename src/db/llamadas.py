@@ -32,7 +32,13 @@ class LlamadasDB:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    'SELECT * FROM llamadas ORDER BY timestamp DESC LIMIT %s',
+                    '''
+                    SELECT l.*, g.nombre AS grupo_nombre
+                    FROM llamadas l
+                    LEFT JOIN grupos g ON g.gssi = l.grupo
+                    ORDER BY l.timestamp DESC
+                    LIMIT %s
+                    ''',
                     (limit,)
                 )
                 return cur.fetchall()
@@ -53,18 +59,19 @@ class LlamadasDB:
         """
         Listado con paginación y filtros opcionales.
         Devuelve (filas, total) donde total es el número de resultados sin paginar.
+        Incluye grupo_nombre via LEFT JOIN a la tabla grupos.
         """
         conditions = []
         params: list = []
 
         if gssi is not None:
-            conditions.append("grupo = %s")
+            conditions.append("l.grupo = %s")
             params.append(gssi)
         if ssi is not None:
-            conditions.append("ssi = %s")
+            conditions.append("l.ssi = %s")
             params.append(ssi)
         if texto:
-            conditions.append("texto ILIKE %s")
+            conditions.append("l.texto ILIKE %s")
             params.append(f"%{texto}%")
 
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
@@ -73,12 +80,19 @@ class LlamadasDB:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 # Total de resultados (sin paginar)
-                cur.execute(f"SELECT COUNT(*) FROM llamadas {where}", params)
+                cur.execute(f"SELECT COUNT(*) FROM llamadas l {where}", params)
                 total = cur.fetchone()["count"]
 
-                # Página solicitada
+                # Página solicitada con nombre de grupo
                 cur.execute(
-                    f"SELECT * FROM llamadas {where} ORDER BY timestamp DESC LIMIT %s OFFSET %s",
+                    f"""
+                    SELECT l.*, g.nombre AS grupo_nombre
+                    FROM llamadas l
+                    LEFT JOIN grupos g ON g.gssi = l.grupo
+                    {where}
+                    ORDER BY l.timestamp DESC
+                    LIMIT %s OFFSET %s
+                    """,
                     params + [limit, offset]
                 )
                 rows = cur.fetchall()
@@ -93,7 +107,15 @@ class LlamadasDB:
         conn = self.pool.getconn()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute('SELECT * FROM llamadas WHERE id = %s', (llamada_id,))
+                cur.execute(
+                    '''
+                    SELECT l.*, g.nombre AS grupo_nombre
+                    FROM llamadas l
+                    LEFT JOIN grupos g ON g.gssi = l.grupo
+                    WHERE l.id = %s
+                    ''',
+                    (llamada_id,)
+                )
                 row = cur.fetchone()
                 return dict(row) if row else None
         except Exception as e:
