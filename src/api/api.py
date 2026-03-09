@@ -42,12 +42,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
 
 def _safe_username(username: str) -> str:
     cleaned = username[:32]
@@ -57,10 +61,18 @@ def _require_llamadas():
     if app_state.llamadas is None:
         raise HTTPException(status_code=503, detail="Servicio no disponible aún")
 
-def _require_scan_config():
-    if app_state.scan_config is None:
+def _require_radio_config():
+    if app_state.radio_config is None:
         raise HTTPException(status_code=503, detail="Servicio no disponible aún")
 
+def _require_grupos():
+    if app_state.grupos is None:
+        raise HTTPException(status_code=503, detail="Servicio no disponible aún")
+
+
+# ------------------------------------------------------------------
+# JWT
+# ------------------------------------------------------------------
 
 def create_access_token(username: str) -> str:
     payload = {
@@ -88,6 +100,10 @@ def verify_token(token: str = Depends(oauth2_scheme)):
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
 
+# ------------------------------------------------------------------
+# Modelos Pydantic
+# ------------------------------------------------------------------
+
 class GSSIUpdate(BaseModel):
     gssi: str
 
@@ -97,12 +113,26 @@ class ScanListUpdate(BaseModel):
 class RefreshRequest(BaseModel):
     refresh_token: str
 
+class GrupoUpsert(BaseModel):
+    gssi: int
+    nombre: str
+    descripcion: str | None = None
+    activo: bool = True
+
+
+# ------------------------------------------------------------------
+# Health
+# ------------------------------------------------------------------
 
 @app.get("/health")
 @limiter.limit("30/minute")
 def health(request: Request):
     return {"status": "ok"}
 
+
+# ------------------------------------------------------------------
+# Auth
+# ------------------------------------------------------------------
 
 @app.post("/auth/token")
 @limiter.limit("5/minute")
@@ -148,15 +178,19 @@ def logout(request: Request, body: RefreshRequest):
     return {"status": "ok"}
 
 
+# ------------------------------------------------------------------
+# Llamadas
+# ------------------------------------------------------------------
+
 @app.get("/calls", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def listar_llamadas(
     request: Request,
-    limit: int  = Query(default=50, ge=1, le=500, description="Resultados por página"),
-    offset: int = Query(default=0,  ge=0,         description="Desplazamiento para paginación"),
-    gssi:   int | None = Query(default=None, description="Filtrar por GSSI (grupo)"),
-    ssi:    int | None = Query(default=None, description="Filtrar por SSI (emisor)"),
-    texto:  str | None = Query(default=None, description="Buscar en transcripción (contiene)"),
+    limit:  int      = Query(default=50,   ge=1, le=500, description="Resultados por página"),
+    offset: int      = Query(default=0,    ge=0,         description="Desplazamiento para paginación"),
+    gssi:   int|None = Query(default=None,               description="Filtrar por GSSI (grupo)"),
+    ssi:    int|None = Query(default=None,               description="Filtrar por SSI (emisor)"),
+    texto:  str|None = Query(default=None,               description="Buscar en transcripción (contiene)"),
 ):
     _require_llamadas()
     rows, total = app_state.llamadas.listar_filtrado(
@@ -180,30 +214,88 @@ def llamada_detalle(request: Request, llamada_id: int):
     return JSONResponse(llamada)
 
 
-@app.post("/update-gssi", dependencies=[Depends(verify_token)])
+# ------------------------------------------------------------------
+# Radio config (GSSI y scan list activos en el radio)
+# ------------------------------------------------------------------
+
+@app.get("/radio-config", dependencies=[Depends(verify_token)])
+@limiter.limit("60/minute")
+def get_radio_config(request: Request):
+    _require_radio_config()
+    return {
+        "gssi":      app_state.radio_config.gssi,
+        "scan_list": app_state.radio_config.scan_list,
+    }
+
+
+@app.post("/radio-config/gssi", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def update_gssi(request: Request, update: GSSIUpdate):
-    _require_scan_config()
+    _require_radio_config()
     try:
-        app_state.scan_config.update_gssi(update.gssi)
+        app_state.radio_config.update_gssi(update.gssi)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return {"status": "ok", "gssi": app_state.scan_config.gssi}
+    return {"status": "ok", "gssi": app_state.radio_config.gssi}
 
 
-@app.post("/update-scanlist", dependencies=[Depends(verify_token)])
+@app.post("/radio-config/scan-list", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def update_scanlist(request: Request, update: ScanListUpdate):
-    _require_scan_config()
+    _require_radio_config()
     try:
-        app_state.scan_config.update_scan_list(update.scan_list)
+        app_state.radio_config.update_scan_list(update.scan_list)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return {"status": "ok", "scan_list": app_state.scan_config.scan_list}
+    return {"status": "ok", "scan_list": app_state.radio_config.scan_list}
 
 
-@app.get("/scan-config", dependencies=[Depends(verify_token)])
+# ------------------------------------------------------------------
+# Grupos (catálogo GSSI → nombre)
+# ------------------------------------------------------------------
+
+@app.get("/groups", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
-def get_scan_config(request: Request):
-    _require_scan_config()
-    return {"gssi": app_state.scan_config.gssi, "scan_list": app_state.scan_config.scan_list}
+def listar_grupos(
+    request: Request,
+    solo_activos: bool = Query(default=True, description="Si true, devuelve solo grupos activos"),
+):
+    _require_grupos()
+    return app_state.grupos.listar(solo_activos=solo_activos)
+
+
+@app.get("/groups/{gssi}", dependencies=[Depends(verify_token)])
+@limiter.limit("60/minute")
+def detalle_grupo(request: Request, gssi: int):
+    _require_grupos()
+    grupos = app_state.grupos.listar(solo_activos=False)
+    grupo  = next((g for g in grupos if g["gssi"] == gssi), None)
+    if not grupo:
+        raise HTTPException(status_code=404, detail="Grupo no encontrado")
+    return grupo
+
+
+@app.post("/groups", dependencies=[Depends(verify_token)])
+@limiter.limit("30/minute")
+def upsert_grupo(request: Request, body: GrupoUpsert):
+    _require_grupos()
+    ok = app_state.grupos.upsert_grupo(
+        gssi=body.gssi,
+        nombre=body.nombre,
+        descripcion=body.descripcion,
+        activo=body.activo,
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="Error guardando el grupo")
+    return {"status": "ok", "gssi": body.gssi}
+
+
+# ------------------------------------------------------------------
+# Scan lists
+# ------------------------------------------------------------------
+
+@app.get("/scan-lists", dependencies=[Depends(verify_token)])
+@limiter.limit("60/minute")
+def listar_scan_lists(request: Request):
+    _require_grupos()
+    return app_state.grupos.listar_scan_lists()
