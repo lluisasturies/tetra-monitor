@@ -54,21 +54,28 @@ RECORDING_ENABLED  = cfg["audio"].get("recording_enabled", True)
 PROCESSING_ENABLED = cfg["pei"].get("processing_enabled", True)
 TELEGRAM_ENABLED   = cfg["telegram"].get("enabled", True)
 
-# Sobreescribir credenciales con variables de entorno (tienen prioridad)
-cfg["database"]["password"] = os.getenv("DB_PASSWORD", cfg["database"].get("password", ""))
-cfg["database"]["user"]     = os.getenv("DB_USER", cfg["database"].get("user", ""))
-cfg["telegram"]["token"]    = os.getenv("TELEGRAM_TOKEN", cfg["telegram"].get("token", ""))
-cfg["telegram"]["chat_id"]  = os.getenv("TELEGRAM_CHAT_ID", cfg["telegram"].get("chat_id", ""))
-cfg["api"]["jwt_secret"]    = os.getenv("JWT_SECRET", cfg["api"].get("jwt_secret", ""))
+# Leer credenciales exclusivamente desde .env
+DB_PASSWORD  = os.getenv("DB_PASSWORD", "")
+DB_USER      = os.getenv("DB_USER", "")
+TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+JWT_SECRET   = os.getenv("JWT_SECRET", "")
 
 # ---------------------------
 # Inicializar componentes
 # ---------------------------
-db = Database(**cfg["database"])
+db = Database(
+    host=cfg["database"]["host"],
+    port=cfg["database"]["port"],
+    dbname=cfg["database"]["dbname"],
+    user=DB_USER,
+    password=DB_PASSWORD,
+)
+
 bot = TelegramBot(
-    cfg["telegram"]["token"],
-    cfg["telegram"]["chat_id"],
-    enabled=TELEGRAM_ENABLED
+    token=TELEGRAM_TOKEN,
+    chat_id=TELEGRAM_CHAT_ID,
+    enabled=TELEGRAM_ENABLED,
 )
 
 try:
