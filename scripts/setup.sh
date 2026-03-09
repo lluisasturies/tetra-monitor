@@ -50,12 +50,14 @@ fi
 # ---------------------------
 if ! command -v psql &> /dev/null; then
     echo "PostgreSQL no encontrado. Instalando..."
-    apt install -y postgresql postgresql-client
+    apt install -y postgresql postgresql-client libpq-dev
     systemctl enable postgresql
     systemctl start postgresql
     echo "PostgreSQL instalado y arrancado"
 else
     echo "PostgreSQL ya instalado ($(psql --version))"
+    # Asegurar que libpq-dev está presente (necesario para compilar psycopg2)
+    apt install -y libpq-dev --no-install-recommends -qq
     if ! systemctl is-active --quiet postgresql; then
         echo "Arrancando PostgreSQL..."
         systemctl start postgresql
