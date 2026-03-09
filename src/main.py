@@ -177,15 +177,6 @@ logger.info(f"Telegram           : {'ACTIVADO'  if TELEGRAM_ENABLED   else 'DESA
 logger.info(f"Streaming          : {'ACTIVADO'  if STREAMING_ENABLED  else 'DESACTIVADO'}")
 
 # ---------------------------
-# Inicializar Streaming
-# ---------------------------
-streamer = None
-if STREAMING_ENABLED:
-    stream_cfg["samplerate"] = cfg["audio"]["sample_rate"]
-    stream_cfg["channels"]   = cfg["audio"]["channels"]
-    streamer = create_streamer(stream_cfg)
-
-# ---------------------------
 # Arrancar API en hilo separado
 # ---------------------------
 def _run_api():
@@ -199,6 +190,15 @@ def _run_api():
 api_thread = threading.Thread(target=_run_api, daemon=True)
 api_thread.start()
 logger.info(f"API arrancada en {cfg['api']['host']}:{cfg['api']['port']}")
+
+# ---------------------------
+# Inicializar Streaming
+# ---------------------------
+streamer = None
+if STREAMING_ENABLED:
+    stream_cfg["samplerate"] = cfg["audio"]["sample_rate"]
+    stream_cfg["channels"]   = cfg["audio"]["channels"]
+    streamer = create_streamer(stream_cfg)
 
 # ---------------------------
 # Manejo de Ctrl+C y SIGTERM
