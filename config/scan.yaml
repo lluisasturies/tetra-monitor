@@ -1,2 +1,3 @@
-gssi: "36001"
-scan_list: "ListaScan1"
+scan:
+  gssi: "36001"
+  scan_list: "ListaScan1"

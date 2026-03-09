@@ -18,8 +18,9 @@ class ScanConfig:
             try:
                 with open(SCAN_CONFIG_PATH, "r") as f:
                     data = yaml.safe_load(f) or {}
-                self.gssi = data.get("gssi", "")
-                self.scan_list = data.get("scan_list", "")
+                scan = data.get("scan", {})
+                self.gssi = scan.get("gssi", "")
+                self.scan_list = scan.get("scan_list", "")
                 self._last_mtime = SCAN_CONFIG_PATH.stat().st_mtime
                 logger.info(f"Scan config cargada: gssi='{self.gssi}', scan_list='{self.scan_list}'")
             except yaml.YAMLError as e:
@@ -53,7 +54,7 @@ class ScanConfig:
     def save(self):
         try:
             with open(SCAN_CONFIG_PATH, "w") as f:
-                yaml.safe_dump({"gssi": self.gssi, "scan_list": self.scan_list}, f)
+                yaml.safe_dump({"scan": {"gssi": self.gssi, "scan_list": self.scan_list}}, f)
             self._last_mtime = SCAN_CONFIG_PATH.stat().st_mtime  # evita releer lo que acabamos de escribir
             logger.info(f"Scan config guardada en {SCAN_CONFIG_PATH}")
         except Exception as e:
