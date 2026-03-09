@@ -7,6 +7,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from jose import JWTError, jwt
+from passlib.context import CryptContext
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -16,18 +17,20 @@ load_dotenv()
 from core.logger import logger
 from app_state import app_state
 
-JWT_SECRET   = os.getenv("JWT_SECRET")
-API_USER     = os.getenv("API_USER")
-API_PASSWORD = os.getenv("API_PASSWORD")
+JWT_SECRET        = os.getenv("JWT_SECRET")
+API_USER          = os.getenv("API_USER")
+API_PASSWORD_HASH = os.getenv("API_PASSWORD_HASH")
 
 if not JWT_SECRET:
     raise RuntimeError("JWT_SECRET no definido en .env")
-if not API_USER or not API_PASSWORD:
-    raise RuntimeError("API_USER y API_PASSWORD deben estar definidos en .env")
+if not API_USER or not API_PASSWORD_HASH:
+    raise RuntimeError("API_USER y API_PASSWORD_HASH deben estar definidos en .env")
 
-JWT_ALGORITHM         = "HS256"
-ACCESS_TOKEN_HOURS    = 1
-REFRESH_TOKEN_DAYS    = 7
+JWT_ALGORITHM      = "HS256"
+ACCESS_TOKEN_HOURS = 1
+REFRESH_TOKEN_DAYS = 7
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="TETRA Monitor API", version="1.0.0")
@@ -84,7 +87,7 @@ def health(request: Request):
 @limiter.limit("5/minute")
 def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     """Obtener access token y refresh token con usuario y contraseña"""
-    if form_data.username != API_USER or form_data.password != API_PASSWORD:
+    if form_data.username != API_USER or not pwd_context.verify(form_data.password, API_PASSWORD_HASH):
         logger.warning(f"Intento de login fallido para usuario '{form_data.username}'")
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     access_token  = create_access_token(form_data.username)
@@ -105,9 +108,8 @@ def refresh(request: Request, body: RefreshRequest):
     if body.refresh_token not in app_state.refresh_tokens:
         logger.warning("Intento de refresh con token inválido o ya usado")
         raise HTTPException(status_code=401, detail="Refresh token inválido o expirado")
-    # Rotación: invalida el token usado y emite uno nuevo
     app_state.refresh_tokens.discard(body.refresh_token)
-    new_refresh = create_refresh_token()
+    new_refresh  = create_refresh_token()
     access_token = create_access_token(API_USER)
     logger.info("Access token renovado correctamente")
     return {
