@@ -132,8 +132,9 @@ if [ ! -f "$ENV_FILE" ]; then
     else
         echo ""
         echo "AVISO: No existe .env. Créalo con las siguientes variables:"
-        echo "       DB_USER, DB_PASSWORD, DB_NAME, DB_HOST, DB_PORT"
-        echo "       TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, JWT_SECRET, API_KEY"
+        echo "       DB_USER, DB_PASSWORD"
+        echo "       TELEGRAM_TOKEN, TELEGRAM_CHAT_ID"
+        echo "       JWT_SECRET, API_USER, API_PASSWORD"
     fi
     echo "       El schema de BD no se aplicará hasta que exista .env"
 else
