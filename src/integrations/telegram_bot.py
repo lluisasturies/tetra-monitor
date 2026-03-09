@@ -2,13 +2,13 @@ import time
 import requests
 from core.logger import logger
 
+
 class TelegramBot:
     def __init__(self, token: str, chat_id: str, max_retries: int = 3, enabled: bool = True):
         self.token = token
         self.chat_id = chat_id
         self.max_retries = max_retries
         self.enabled = enabled
-        self.base_url = f"https://api.telegram.org/bot{token}"
 
         logger.info(f"Telegram: {'ACTIVADO' if self.enabled else 'DESACTIVADO'}")
 
@@ -26,10 +26,11 @@ class TelegramBot:
         self._send_with_retry(mensaje)
 
     def _send_with_retry(self, mensaje: str):
+        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
         for intento in range(1, self.max_retries + 1):
             try:
                 resp = requests.post(
-                    f"{self.base_url}/sendMessage",
+                    url,
                     json={
                         "chat_id": self.chat_id,
                         "text": mensaje,
