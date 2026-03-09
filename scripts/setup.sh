@@ -129,18 +129,23 @@ echo "Directorios creados: data/audio, logs"
 # Configurar PostgreSQL
 # ---------------------------
 if [ ! -f "$ENV_FILE" ]; then
-    echo "AVISO: No se encontró .env en $ENV_FILE — omitiendo configuración de BD"
-    echo "       Copia .env.example a .env y vuelve a ejecutar el setup"
+    echo ""
+    echo "AVISO: No se encontró .env — omitiendo configuración de BD"
+    echo "       Copia .env.example a .env y ejecuta manualmente:"
+    echo "       sudo -u postgres psql -d tetra -f data/db/schema.sql"
 else
     set -a; source "$ENV_FILE"; set +a
     echo "Configurando PostgreSQL (usuario: $DB_USER, BD: tetra)..."
 
+    # Crear usuario si no existe
     sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1 || \
         sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';"
 
+    # Crear base de datos si no existe
     sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='tetra'" | grep -q 1 || \
         sudo -u postgres psql -c "CREATE DATABASE tetra OWNER $DB_USER;"
 
+    # Aplicar schema
     sudo -u postgres psql -d tetra -f "$SCHEMA"
     echo "Base de datos configurada correctamente"
 fi
@@ -154,6 +159,11 @@ echo "  Setup completado"
 echo "==============================="
 echo ""
 echo "Pasos siguientes:"
-echo "  1. Copia .env.example a .env y rellena tus credenciales"
-echo "  2. Arranca con: make start  o  bash scripts/start.sh"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "  1. Copia .env.example a .env y rellena tus credenciales"
+    echo "  2. Ejecuta de nuevo: sudo bash scripts/setup.sh  (para configurar la BD)"
+    echo "  3. Arranca con: make start  o  bash scripts/start.sh"
+else
+    echo "  1. Arranca con: make start  o  bash scripts/start.sh"
+fi
 echo ""
