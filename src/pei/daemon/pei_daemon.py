@@ -4,23 +4,22 @@ from core.logger import logger, calls_logger
 from core.scan_config import scan_config
 from audio.audio_cleanup import AudioCleanup
 from pei.models.pei_event import PEIEvent
+from db.llamadas import LlamadasDB
 
-# Cada cuántos segundos el daemon comprueba si cambió el scan config
 SCAN_CONFIG_CHECK_INTERVAL = 5
-
-# Número máximo de transcripciones en paralelo
-# En RPi con Whisper base, 1 es lo razonable para no saturar la CPU
 STT_MAX_WORKERS = 1
 
+
 class PEIDaemon:
-    def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter, db, bot,
+    def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter,
+                 llamadas_db: LlamadasDB, bot,
                  port="", baudrate=9600, audio_output_dir="", retention_days=7,
                  recording_enabled=True, processing_enabled=True):
         self.motorola_pei_cls = motorola_pei_cls
         self.audio_buffer = audio_buffer
         self.stt_processor = stt_processor
         self.keyword_filter = keyword_filter
-        self.db = db
+        self.llamadas_db = llamadas_db
         self.bot = bot
         self.port = port
         self.baudrate = baudrate
@@ -34,7 +33,6 @@ class PEIDaemon:
         self._cleanup = AudioCleanup(audio_output_dir, retention_days)
         self._init_radio()
 
-        # Log del estado inicial de los flags
         logger.info(f"Grabación de audio: {'ACTIVADA'  if self.recording_enabled  else 'DESACTIVADA'}")
         logger.info(f"Procesado PEI:      {'ACTIVADO'  if self.processing_enabled else 'DESACTIVADO'}")
 
@@ -67,7 +65,6 @@ class PEIDaemon:
             logger.error(f"[PEI] Reconexión fallida: {e}")
 
     def _check_scan_config(self):
-        """Comprueba si el config cambió en disco y aplica los cambios a la radio."""
         now = time.monotonic()
         if now - self._last_config_check < SCAN_CONFIG_CHECK_INTERVAL:
             return
@@ -87,13 +84,12 @@ class PEIDaemon:
             logger.info(f"Transcripción (grupo={grupo}, ssi={ssi}): {texto}")
 
             if self.keyword_filter.contiene_evento(texto):
-                self.db.guardar_evento(grupo, ssi, texto, path)
+                self.llamadas_db.guardar(grupo, ssi, texto, path)
                 self.bot.enviar_alerta(grupo, ssi, texto)
         except Exception as e:
             logger.error(f"Error en transcripción async (grupo={grupo}, ssi={ssi}): {e}")
 
     def _handle_event(self, event: PEIEvent):
-        # Si el procesado PEI está desactivado, ignorar todos los eventos
         if not self.processing_enabled:
             logger.debug(f"[PEI] Evento ignorado (processing_enabled=false): {event.type}")
             return
@@ -112,7 +108,6 @@ class PEIDaemon:
             if self.recording_enabled:
                 filename = f"{self._current_grupo}_{self._current_ssi}_{int(time.time())}.flac"
                 path = self.audio_buffer.stop_recording(filename)
-
                 if path:
                     grupo = self._current_grupo
                     ssi = self._current_ssi
@@ -182,8 +177,6 @@ class PEIDaemon:
 
     def shutdown(self, streamer=None):
         logger.info("Apagando PEI...")
-
-        logger.info("Esperando transcripciones pendientes...")
         self._executor.shutdown(wait=True)
 
         if streamer:
@@ -194,7 +187,5 @@ class PEIDaemon:
                 logger.error(f"Error al detener el streamer: {e}")
         if self.audio_buffer:
             self.audio_buffer.stop()
-        if self.db:
-            self.db.close()
         if self.radio:
             self.radio.close()

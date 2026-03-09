@@ -6,7 +6,6 @@ import threading
 import uvicorn
 from dotenv import load_dotenv
 
-# Cargar variables de entorno antes que nada
 load_dotenv()
 
 from core.logger import logger
@@ -14,10 +13,12 @@ from audio.audio_buffer import AudioBuffer
 from core.stt_processor import STTProcessor
 from filters.keyword_filter import KeywordFilter
 from integrations.telegram_bot import TelegramBot
-from core.database import Database
+from db.pool import DBPool
+from db.llamadas import LlamadasDB
 from pei.hardware.pei_motorola import MotorolaPEI
 from pei.daemon.pei_daemon import PEIDaemon
 from streaming import create_streamer
+from app_state import app_state
 from api.api import app
 
 print()
@@ -30,10 +31,9 @@ print()
 # ---------------------------
 # Definir rutas del proyecto
 # ---------------------------
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
+PROJECT_ROOT  = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+CONFIG_PATH   = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 KEYWORDS_PATH = os.path.join(PROJECT_ROOT, "config", "keywords.yaml")
-LOG_DIR = os.path.join(PROJECT_ROOT, "logs")
 
 # ---------------------------
 # Cargar configuración
@@ -49,62 +49,62 @@ except yaml.YAMLError as e:
     logger.critical(f"Error parseando config.yaml: {e}")
     sys.exit(1)
 
-AUDIO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, cfg["audio"].get("output_dir", "data/audio"))
-RETENTION_DAYS = cfg["audio"].get("retention_days", 7)
-
-# Leer flags de activación
+AUDIO_OUTPUT_DIR   = os.path.join(PROJECT_ROOT, cfg["audio"].get("output_dir", "data/audio"))
+RETENTION_DAYS     = cfg["audio"].get("retention_days", 7)
 RECORDING_ENABLED  = cfg["audio"].get("recording_enabled", True)
 PROCESSING_ENABLED = cfg["pei"].get("processing_enabled", True)
-TELEGRAM_ENABLED = cfg["telegram"].get("enabled", True)
+TELEGRAM_ENABLED   = cfg["telegram"].get("enabled", True)
 
 # ---------------------------
-# Validar variables de entorno obligatorias
+# Validar variables de entorno
 # ---------------------------
 _env_errors = []
-
-if not os.getenv("DB_USER"):
-    _env_errors.append("DB_USER")
-if not os.getenv("DB_PASSWORD"):
-    _env_errors.append("DB_PASSWORD")
-if TELEGRAM_ENABLED and not os.getenv("TELEGRAM_TOKEN"):
-    _env_errors.append("TELEGRAM_TOKEN")
-if TELEGRAM_ENABLED and not os.getenv("TELEGRAM_CHAT_ID"):
-    _env_errors.append("TELEGRAM_CHAT_ID")
-if not os.getenv("JWT_SECRET"):
-    _env_errors.append("JWT_SECRET")
-if not os.getenv("API_USER"):
-    _env_errors.append("API_USER")
-if not os.getenv("API_PASSWORD"):
-    _env_errors.append("API_PASSWORD")
+if not os.getenv("DB_USER"):          _env_errors.append("DB_USER")
+if not os.getenv("DB_PASSWORD"):      _env_errors.append("DB_PASSWORD")
+if TELEGRAM_ENABLED and not os.getenv("TELEGRAM_TOKEN"):   _env_errors.append("TELEGRAM_TOKEN")
+if TELEGRAM_ENABLED and not os.getenv("TELEGRAM_CHAT_ID"): _env_errors.append("TELEGRAM_CHAT_ID")
+if not os.getenv("JWT_SECRET"):       _env_errors.append("JWT_SECRET")
+if not os.getenv("API_USER"):         _env_errors.append("API_USER")
+if not os.getenv("API_PASSWORD"):     _env_errors.append("API_PASSWORD")
 
 if _env_errors:
     for var in _env_errors:
         logger.critical(f"Variable de entorno obligatoria no definida: {var}")
     sys.exit(1)
 
-# Leer credenciales exclusivamente desde .env
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-DB_USER = os.getenv("DB_USER", "")
+DB_USER          = os.getenv("DB_USER", "")
+DB_PASSWORD      = os.getenv("DB_PASSWORD", "")
 TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # ---------------------------
-# Inicializar componentes
+# Inicializar pool y repositorios
 # ---------------------------
-db = Database(
+pool = DBPool(
     host=cfg["database"]["host"],
     port=cfg["database"]["port"],
     dbname=cfg["database"]["dbname"],
     user=DB_USER,
     password=DB_PASSWORD,
 )
+llamadas_db = LlamadasDB(pool)
 
+app_state.pool    = pool
+app_state.llamadas = llamadas_db
+
+# ---------------------------
+# Inicializar bot
+# ---------------------------
 bot = TelegramBot(
     token=TELEGRAM_TOKEN,
     chat_id=TELEGRAM_CHAT_ID,
     enabled=TELEGRAM_ENABLED,
 )
+app_state.bot = bot
 
+# ---------------------------
+# Inicializar AudioBuffer
+# ---------------------------
 try:
     audio_buffer = AudioBuffer(
         device_index=cfg["audio"].get("device_index", None),
@@ -133,7 +133,7 @@ pei_daemon = PEIDaemon(
     audio_buffer=audio_buffer,
     stt_processor=stt,
     keyword_filter=kf,
-    db=db,
+    llamadas_db=llamadas_db,
     bot=bot,
     port=cfg["pei"].get("port", ""),
     baudrate=cfg["pei"]["baudrate"],
@@ -166,7 +166,7 @@ def _run_api():
         app,
         host=cfg["api"]["host"],
         port=cfg["api"]["port"],
-        log_level="warning"  # uvicorn no pisa el logger propio
+        log_level="warning"
     )
 
 api_thread = threading.Thread(target=_run_api, daemon=True)
@@ -179,6 +179,7 @@ logger.info(f"API arrancada en {cfg['api']['host']}:{cfg['api']['port']}")
 def signal_handler(sig, frame):
     logger.info("Señal de interrupción recibida, cerrando aplicación...")
     pei_daemon.shutdown(streamer)
+    pool.closeall()
     sys.exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
@@ -197,4 +198,5 @@ except RuntimeError as e:
 except KeyboardInterrupt:
     logger.info("Interrupción por teclado recibida")
     pei_daemon.shutdown(streamer)
+    pool.closeall()
     sys.exit(0)
