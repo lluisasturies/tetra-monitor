@@ -3,14 +3,14 @@
 # Si la tabla 'grupos' ya tiene datos, este fichero se ignora.
 
 grupos:
-  - gssi: 36001
-    nombre: "Operaciones"
-  - gssi: 36002
-    nombre: "Emergencias"
-  - gssi: 36003
-    nombre: "Logística"
-  - gssi: 36004
-    nombre: "Seguridad"
+  - nombre: "Operaciones"
+    gssi: 36001
+  - nombre: "Emergencias"
+    gssi: 36002
+  - nombre: "Logística"
+    gssi: 36003
+  - nombre: "Seguridad"
+    gssi: 36004
 
 # Carpetas organizativas — equivalente a las folders de la radio.
 # El orden de las carpetas y de los grupos dentro de cada carpeta
