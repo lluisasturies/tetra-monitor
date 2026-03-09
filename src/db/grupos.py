@@ -33,21 +33,25 @@ class GruposDB:
 
         conn = self.pool.getconn()
         try:
+            # Comprobación de tabla vacía (lectura simple, sin transacción explícita)
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM grupos")
-                if cur.fetchone()[0] > 0:
-                    logger.info("[GruposDB] La tabla grupos ya tiene datos, semilla omitida")
-                    return False
+                count = cur.fetchone()[0]
+            conn.rollback()  # cerrar la transacción implícita antes de cambiar autocommit
+
+            if count > 0:
+                logger.info("[GruposDB] La tabla grupos ya tiene datos, semilla omitida")
+                return False
 
             with open(filepath, "r") as f:
                 data = yaml.safe_load(f) or {}
 
-            grupos    = data.get("grupos", [])
+            grupos     = data.get("grupos", [])
             scan_lists = data.get("scan_lists", [])
 
+            # Ahora sí podemos cambiar autocommit (no hay transacción abierta)
             conn.autocommit = False
             with conn.cursor() as cur:
-                # Insertar grupos
                 for g in grupos:
                     cur.execute(
                         """
@@ -58,7 +62,6 @@ class GruposDB:
                         (g["gssi"], g["nombre"], g.get("descripcion"))
                     )
 
-                # Insertar scan lists y sus GSSIs
                 for sl in scan_lists:
                     cur.execute(
                         """
@@ -71,7 +74,6 @@ class GruposDB:
                     )
                     row = cur.fetchone()
                     if row is None:
-                        # Ya existía, recuperar el id
                         cur.execute("SELECT id FROM scan_lists WHERE nombre = %s", (sl["nombre"],))
                         row = cur.fetchone()
                     sl_id = row[0]
@@ -114,6 +116,7 @@ class GruposDB:
             logger.error(f"[GruposDB] Error obteniendo nombre para gssi={gssi}: {e}")
             return str(gssi)
         finally:
+            conn.rollback()
             self.pool.putconn(conn)
 
     def listar(self, solo_activos: bool = True) -> list[dict]:
@@ -130,6 +133,7 @@ class GruposDB:
             logger.error(f"[GruposDB] Error listando grupos: {e}")
             return []
         finally:
+            conn.rollback()
             self.pool.putconn(conn)
 
     def listar_scan_lists(self) -> list[dict]:
@@ -154,7 +158,6 @@ class GruposDB:
                 """)
                 rows = cur.fetchall()
 
-            # Agrupar por scan list
             result: dict[int, dict] = {}
             for r in rows:
                 sl_id = r["id"]
@@ -172,6 +175,7 @@ class GruposDB:
             logger.error(f"[GruposDB] Error listando scan lists: {e}")
             return []
         finally:
+            conn.rollback()
             self.pool.putconn(conn)
 
     # ------------------------------------------------------------------
