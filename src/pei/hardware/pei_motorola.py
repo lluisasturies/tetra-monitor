@@ -6,11 +6,11 @@ from pei.models.pei_event import PEIEvent
 class MotorolaPEI:
     def __init__(self, port: str, baud: int = 9600):
         try:
+            logger.info(f"Inicializando MotorolaPEI en puerto {port} con baud {baud}")
             self.ser = serial.Serial(port, baudrate=baud, timeout=1)
             time.sleep(1)
             self.current_gssi = None
             self.last_switch = 0
-            logger.info(f"Inicializando MotorolaPEI en puerto {port} con baud {baud}")
             self.send("AT")
             self.send("ATE0")
         except serial.SerialException as e:
