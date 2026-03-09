@@ -1,2 +1,36 @@
-.vscode
-src/__pycache__
+# Entorno virtual
+venv/
+.venv/
+
+# Variables de entorno
+.env
+
+# Grabaciones de audio
+data/audio/
+
+# Logs
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Whisper — modelos descargados en caché
+~/.cache/whisper/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Pytest
+.pytest_cache/
+htmlcov/
+.coverage
