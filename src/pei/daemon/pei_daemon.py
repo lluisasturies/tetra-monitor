@@ -35,7 +35,7 @@ class PEIDaemon:
         self._cleanup = AudioCleanup(audio_output_dir, retention_days)
         self._init_radio()
 
-        logger.info(f"Grabación de audio: {'ACTIVADA'  if self.recording_enabled  else 'DESACTIVADA'}")
+        logger.info(f"Grabación de audio: {'ACTIVADO'  if self.recording_enabled  else 'DESACTIVADO'}")
         logger.info(f"Procesado PEI:      {'ACTIVADO'  if self.processing_enabled else 'DESACTIVADO'}")
 
     def _apply_scan_config(self):
