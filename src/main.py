@@ -167,6 +167,21 @@ pei_daemon = PEIDaemon(
 )
 
 # ---------------------------
+# Arrancar API en hilo separado
+# ---------------------------
+def _run_api():
+    uvicorn.run(
+        app,
+        host=cfg["api"]["host"],
+        port=cfg["api"]["port"],
+        log_level="warning"
+    )
+
+api_thread = threading.Thread(target=_run_api, daemon=True)
+api_thread.start()
+logger.info(f"API arrancada en {cfg['api']['host']}:{cfg['api']['port']}")
+
+# ---------------------------
 # Inicializar Streaming
 # ---------------------------
 streamer = None
@@ -182,21 +197,6 @@ if stream_cfg.get("enabled", False):
         logger.info("Streaming habilitado pero no se encontró URL válida")
 else:
     logger.info("Streaming deshabilitado en config.yaml")
-
-# ---------------------------
-# Arrancar API en hilo separado
-# ---------------------------
-def _run_api():
-    uvicorn.run(
-        app,
-        host=cfg["api"]["host"],
-        port=cfg["api"]["port"],
-        log_level="warning"
-    )
-
-api_thread = threading.Thread(target=_run_api, daemon=True)
-api_thread.start()
-logger.info(f"API arrancada en {cfg['api']['host']}:{cfg['api']['port']}")
 
 # ---------------------------
 # Manejo de Ctrl+C y SIGTERM
