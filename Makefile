@@ -8,7 +8,7 @@ SERVICE_TMPL  := $(PROJECT_ROOT)/scripts/tetra-monitor.service.template
 SERVICE_DEST  := /etc/systemd/system/$(SERVICE_NAME).service
 CURRENT_USER  := $(shell logname 2>/dev/null || echo $$SUDO_USER || echo $$USER)
 
-.PHONY: help setup setup-https start stop restart logs install-service uninstall-service update status
+.PHONY: help setup setup-https set-password start stop restart logs install-service uninstall-service update status
 
 help:
 	@echo ""
@@ -16,6 +16,7 @@ help:
 	@echo ""
 	@echo "  make setup              Instala dependencias y prepara el entorno"
 	@echo "  make setup-https        Instala nginx con TLS (certificado autofirmado)"
+	@echo "  make set-password       Genera hash bcrypt y lo guarda en .env"
 	@echo "  make start              Arranca el monitor en primer plano"
 	@echo "  make stop               Detiene el servicio systemd"
 	@echo "  make restart            Reinicia el servicio systemd"
@@ -32,6 +33,9 @@ setup:
 
 setup-https:
 	sudo bash scripts/setup_nginx.sh
+
+set-password:
+	$(PROJECT_ROOT)/venv/bin/python3 scripts/hash_password.py --env $(PROJECT_ROOT)/.env
 
 start:
 	bash scripts/start.sh
