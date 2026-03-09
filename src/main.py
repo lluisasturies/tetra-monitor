@@ -2,6 +2,8 @@ import os
 import sys
 import yaml
 import signal
+import threading
+import uvicorn
 from dotenv import load_dotenv
 
 # Cargar variables de entorno antes que nada
@@ -16,6 +18,7 @@ from core.database import Database
 from pei.hardware.pei_motorola import MotorolaPEI
 from pei.daemon.pei_daemon import PEIDaemon
 from streaming import create_streamer
+from api.api import app
 
 print()
 print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀█░░░░░█▄█░█▀█░█▀█░▀█▀░▀█▀░█▀█░█▀▄")
@@ -52,14 +55,13 @@ RETENTION_DAYS = cfg["audio"].get("retention_days", 7)
 # Leer flags de activación
 RECORDING_ENABLED  = cfg["audio"].get("recording_enabled", True)
 PROCESSING_ENABLED = cfg["pei"].get("processing_enabled", True)
-TELEGRAM_ENABLED   = cfg["telegram"].get("enabled", True)
+TELEGRAM_ENABLED = cfg["telegram"].get("enabled", True)
 
 # Leer credenciales exclusivamente desde .env
-DB_PASSWORD  = os.getenv("DB_PASSWORD", "")
-DB_USER      = os.getenv("DB_USER", "")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DB_USER = os.getenv("DB_USER", "")
 TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
-JWT_SECRET   = os.getenv("JWT_SECRET", "")
 
 # ---------------------------
 # Inicializar componentes
@@ -130,6 +132,21 @@ if stream_cfg.get("enabled", False):
         logger.info("Streaming habilitado pero no se encontró URL válida")
 else:
     logger.info("Streaming deshabilitado en config.yaml")
+
+# ---------------------------
+# Arrancar API en hilo separado
+# ---------------------------
+def _run_api():
+    uvicorn.run(
+        app,
+        host=cfg["api"]["host"],
+        port=cfg["api"]["port"],
+        log_level="warning"  # uvicorn no pisa el logger propio
+    )
+
+api_thread = threading.Thread(target=_run_api, daemon=True)
+api_thread.start()
+logger.info(f"API arrancada en {cfg['api']['host']}:{cfg['api']['port']}")
 
 # ---------------------------
 # Manejo de Ctrl+C y SIGTERM
