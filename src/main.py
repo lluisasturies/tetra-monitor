@@ -20,7 +20,6 @@ from pei.hardware.pei_motorola import MotorolaPEI
 from pei.daemon.pei_daemon import PEIDaemon
 from streaming import create_streamer
 from app_state import app_state
-from api.api import app
 
 print()
 print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀▀░░░░░█▄█░█▀▀░█▀▀░▀█▀░▀█▀░█▀▀░█▀▄")
@@ -64,13 +63,17 @@ TELEGRAM_ENABLED   = cfg["telegram"].get("enabled", True)
 # Validar variables de entorno
 # ---------------------------
 _env_errors = []
-if not os.getenv("DB_USER"):          _env_errors.append("DB_USER")
-if not os.getenv("DB_PASSWORD"):      _env_errors.append("DB_PASSWORD")
+if not os.getenv("DB_USER"):               _env_errors.append("DB_USER")
+if not os.getenv("DB_PASSWORD"):           _env_errors.append("DB_PASSWORD")
 if TELEGRAM_ENABLED and not os.getenv("TELEGRAM_TOKEN"):   _env_errors.append("TELEGRAM_TOKEN")
 if TELEGRAM_ENABLED and not os.getenv("TELEGRAM_CHAT_ID"): _env_errors.append("TELEGRAM_CHAT_ID")
-if not os.getenv("JWT_SECRET"):       _env_errors.append("JWT_SECRET")
-if not os.getenv("API_USER"):         _env_errors.append("API_USER")
-if not os.getenv("API_PASSWORD"):     _env_errors.append("API_PASSWORD")
+if not os.getenv("JWT_SECRET"):            _env_errors.append("JWT_SECRET")
+if not os.getenv("API_USER"):              _env_errors.append("API_USER")
+if not os.getenv("API_PASSWORD_HASH"):
+    if os.getenv("API_PASSWORD"):
+        logger.critical("API_PASSWORD ya no se usa — ejecuta 'make set-password' para migrar a API_PASSWORD_HASH")
+    else:
+        _env_errors.append("API_PASSWORD_HASH")
 
 if _env_errors:
     for var in _env_errors:
@@ -81,6 +84,15 @@ DB_USER          = os.getenv("DB_USER", "")
 DB_PASSWORD      = os.getenv("DB_PASSWORD", "")
 TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+# ---------------------------
+# Importar API (después de validar .env)
+# ---------------------------
+try:
+    from api.api import app
+except RuntimeError as e:
+    logger.critical(f"Error al inicializar la API: {e}")
+    sys.exit(1)
 
 # ---------------------------
 # Inicializar scan config
