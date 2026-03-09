@@ -163,6 +163,17 @@ else
 fi
 
 # ---------------------------
+# Preguntar si instalar HTTPS (nginx)
+# ---------------------------
+echo ""
+read -r -p "¿Instalar HTTPS con nginx? (recomendado si la API es accesible desde fuera) [s/N]: " INSTALL_HTTPS
+if [[ "$INSTALL_HTTPS" =~ ^[sS]$ ]]; then
+    bash "$SCRIPT_DIR/setup_nginx.sh"
+else
+    echo "HTTPS omitido. Puedes instalarlo más tarde con: make setup-https"
+fi
+
+# ---------------------------
 # Fin
 # ---------------------------
 echo ""
