@@ -153,6 +153,7 @@ class PEIDaemon:
                     continue
 
                 self._check_scan_config()
+                self.keyword_filter.reload_if_changed()
                 self._cleanup.run_if_due()
 
                 event = self.radio.read_event()
