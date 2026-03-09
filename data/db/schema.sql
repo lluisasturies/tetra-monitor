@@ -22,7 +22,6 @@ CREATE INDEX IF NOT EXISTS idx_llamadas_ssi       ON llamadas (ssi);
 CREATE TABLE IF NOT EXISTS grupos (
     gssi        INTEGER PRIMARY KEY,
     nombre      TEXT    NOT NULL,
-    descripcion TEXT,
     activo      BOOLEAN NOT NULL DEFAULT TRUE
 );
 
@@ -31,10 +30,9 @@ CREATE INDEX IF NOT EXISTS idx_grupos_activo ON grupos (activo);
 -- Carpetas organizativas (equivalente a las folders de la radio)
 -- Un GSSI puede estar en varias carpetas
 CREATE TABLE IF NOT EXISTS carpetas (
-    id          SERIAL PRIMARY KEY,
-    nombre      TEXT    NOT NULL UNIQUE,
-    descripcion TEXT,
-    orden       SMALLINT NOT NULL DEFAULT 0  -- orden de visualización
+    id      SERIAL   PRIMARY KEY,
+    nombre  TEXT     NOT NULL UNIQUE,
+    orden   SMALLINT NOT NULL DEFAULT 0  -- orden de visualización
 );
 
 -- Relación N:M entre carpetas y grupos

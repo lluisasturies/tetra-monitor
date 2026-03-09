@@ -55,23 +55,23 @@ class GruposDB:
                 for g in grupos:
                     cur.execute(
                         """
-                        INSERT INTO grupos (gssi, nombre, descripcion)
-                        VALUES (%s, %s, %s)
+                        INSERT INTO grupos (gssi, nombre)
+                        VALUES (%s, %s)
                         ON CONFLICT (gssi) DO NOTHING
                         """,
-                        (g["gssi"], g["nombre"], g.get("descripcion"))
+                        (g["gssi"], g["nombre"])
                     )
 
                 # Carpetas
                 for c in carpetas:
                     cur.execute(
                         """
-                        INSERT INTO carpetas (nombre, descripcion, orden)
-                        VALUES (%s, %s, %s)
+                        INSERT INTO carpetas (nombre, orden)
+                        VALUES (%s, %s)
                         ON CONFLICT (nombre) DO NOTHING
                         RETURNING id
                         """,
-                        (c["nombre"], c.get("descripcion"), c.get("orden", 0))
+                        (c["nombre"], c.get("orden", 0))
                     )
                     row = cur.fetchone()
                     if row is None:
@@ -156,9 +156,9 @@ class GruposDB:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 if solo_activos:
-                    cur.execute("SELECT * FROM grupos WHERE activo = TRUE ORDER BY gssi")
+                    cur.execute("SELECT gssi, nombre, activo FROM grupos WHERE activo = TRUE ORDER BY gssi")
                 else:
-                    cur.execute("SELECT * FROM grupos ORDER BY gssi")
+                    cur.execute("SELECT gssi, nombre, activo FROM grupos ORDER BY gssi")
                 return [dict(r) for r in cur.fetchall()]
         except Exception as e:
             logger.error(f"[GruposDB] Error listando grupos: {e}")
@@ -167,7 +167,7 @@ class GruposDB:
             conn.rollback()
             self.pool.putconn(conn)
 
-    def upsert_grupo(self, gssi: int, nombre: str, descripcion: str | None = None, activo: bool = True) -> bool:
+    def upsert_grupo(self, gssi: int, nombre: str, activo: bool = True) -> bool:
         """Inserta o actualiza un grupo."""
         conn = self.pool.getconn()
         try:
@@ -175,14 +175,13 @@ class GruposDB:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO grupos (gssi, nombre, descripcion, activo)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO grupos (gssi, nombre, activo)
+                    VALUES (%s, %s, %s)
                     ON CONFLICT (gssi) DO UPDATE
-                        SET nombre      = EXCLUDED.nombre,
-                            descripcion = EXCLUDED.descripcion,
-                            activo      = EXCLUDED.activo
+                        SET nombre = EXCLUDED.nombre,
+                            activo = EXCLUDED.activo
                     """,
-                    (gssi, nombre, descripcion, activo)
+                    (gssi, nombre, activo)
                 )
             conn.commit()
             return True
@@ -201,7 +200,7 @@ class GruposDB:
     def listar_carpetas(self) -> list[dict]:
         """
         Devuelve todas las carpetas con sus grupos anidados.
-        Formato: [{id, nombre, descripcion, orden, grupos: [{gssi, nombre, orden}, ...]}, ...]
+        Formato: [{id, nombre, orden, grupos: [{gssi, nombre, orden}, ...]}, ...]
         """
         conn = self.pool.getconn()
         try:
@@ -209,12 +208,11 @@ class GruposDB:
                 cur.execute("""
                     SELECT
                         c.id,
-                        c.nombre        AS carpeta_nombre,
-                        c.descripcion   AS carpeta_descripcion,
-                        c.orden         AS carpeta_orden,
+                        c.nombre   AS carpeta_nombre,
+                        c.orden    AS carpeta_orden,
                         g.gssi,
-                        g.nombre        AS grupo_nombre,
-                        cg.orden        AS grupo_orden
+                        g.nombre   AS grupo_nombre,
+                        cg.orden   AS grupo_orden
                     FROM carpetas c
                     LEFT JOIN carpeta_grupos cg ON cg.carpeta_id = c.id
                     LEFT JOIN grupos g          ON g.gssi = cg.gssi
@@ -227,11 +225,10 @@ class GruposDB:
                 c_id = r["id"]
                 if c_id not in result:
                     result[c_id] = {
-                        "id":          c_id,
-                        "nombre":      r["carpeta_nombre"],
-                        "descripcion": r["carpeta_descripcion"],
-                        "orden":       r["carpeta_orden"],
-                        "grupos":      [],
+                        "id":     c_id,
+                        "nombre": r["carpeta_nombre"],
+                        "orden":  r["carpeta_orden"],
+                        "grupos": [],
                     }
                 if r["gssi"] is not None:
                     result[c_id]["grupos"].append({
@@ -248,24 +245,21 @@ class GruposDB:
             conn.rollback()
             self.pool.putconn(conn)
 
-    def upsert_carpeta(self, nombre: str, descripcion: str | None = None, orden: int = 0) -> int | None:
-        """
-        Inserta o actualiza una carpeta. Devuelve el id de la carpeta, o None si hubo error.
-        """
+    def upsert_carpeta(self, nombre: str, orden: int = 0) -> int | None:
+        """Inserta o actualiza una carpeta. Devuelve el id, o None si hubo error."""
         conn = self.pool.getconn()
         try:
             conn.autocommit = False
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO carpetas (nombre, descripcion, orden)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO carpetas (nombre, orden)
+                    VALUES (%s, %s)
                     ON CONFLICT (nombre) DO UPDATE
-                        SET descripcion = EXCLUDED.descripcion,
-                            orden       = EXCLUDED.orden
+                        SET orden = EXCLUDED.orden
                     RETURNING id
                     """,
-                    (nombre, descripcion, orden)
+                    (nombre, orden)
                 )
                 carpeta_id = cur.fetchone()[0]
             conn.commit()

@@ -5,22 +5,17 @@
 grupos:
   - gssi: 36001
     nombre: "Operaciones"
-    descripcion: "Canal principal de operaciones"
   - gssi: 36002
     nombre: "Emergencias"
-    descripcion: "Canal de emergencias"
   - gssi: 36003
     nombre: "Logística"
-    descripcion: "Canal de coordinación logística"
   - gssi: 36004
     nombre: "Seguridad"
-    descripcion: "Canal de seguridad"
 
 # Carpetas organizativas — equivalente a las folders de la radio.
 # Un GSSI puede aparecer en varias carpetas.
 carpetas:
   - nombre: "Operativo"
-    descripcion: "Canales operativos principales"
     orden: 0
     grupos:
       - gssi: 36001
@@ -28,7 +23,6 @@ carpetas:
       - gssi: 36003
         orden: 1
   - nombre: "Emergencias"
-    descripcion: "Canales de emergencia y seguridad"
     orden: 1
     grupos:
       - gssi: 36002

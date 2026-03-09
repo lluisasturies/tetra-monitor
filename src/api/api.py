@@ -182,7 +182,6 @@ class RefreshRequest(BaseModel):
 class GrupoUpsert(BaseModel):
     gssi: int
     nombre: str
-    descripcion: str | None = None
     activo: bool = True
 
 class CarpetaGrupoEntry(BaseModel):
@@ -191,7 +190,6 @@ class CarpetaGrupoEntry(BaseModel):
 
 class CarpetaUpsert(BaseModel):
     nombre: str
-    descripcion: str | None = None
     orden: int = 0
     grupos: list[CarpetaGrupoEntry] = []
 
@@ -358,7 +356,6 @@ def upsert_grupo(request: Request, body: GrupoUpsert):
     ok = app_state.grupos.upsert_grupo(
         gssi=body.gssi,
         nombre=body.nombre,
-        descripcion=body.descripcion,
         activo=body.activo,
     )
     if not ok:
@@ -395,12 +392,10 @@ def detalle_carpeta(request: Request, carpeta_id: int):
 def upsert_carpeta(request: Request, body: CarpetaUpsert):
     """
     Crea o actualiza una carpeta (upsert por nombre) y reemplaza sus grupos.
-    Para actualizar solo los metadatos sin tocar los grupos, omite el campo 'grupos'.
     """
     _require_grupos()
     carpeta_id = app_state.grupos.upsert_carpeta(
         nombre=body.nombre,
-        descripcion=body.descripcion,
         orden=body.orden,
     )
     if carpeta_id is None:
@@ -419,10 +414,7 @@ def upsert_carpeta(request: Request, body: CarpetaUpsert):
 @app.put("/folders/{carpeta_id}/groups", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
 def actualizar_grupos_carpeta(request: Request, carpeta_id: int, body: list[CarpetaGrupoEntry]):
-    """
-    Reemplaza completamente los grupos de una carpeta existente.
-    No modifica nombre ni descripción de la carpeta.
-    """
+    """Reemplaza completamente los grupos de una carpeta existente."""
     _require_grupos()
     carpetas = app_state.grupos.listar_carpetas()
     if not any(c["id"] == carpeta_id for c in carpetas):
@@ -440,9 +432,7 @@ def actualizar_grupos_carpeta(request: Request, carpeta_id: int, body: list[Carp
 @app.delete("/folders/{carpeta_id}", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
 def borrar_carpeta(request: Request, carpeta_id: int):
-    """
-    Elimina una carpeta. Los grupos NO se eliminan, solo se desvinculan.
-    """
+    """Elimina una carpeta. Los grupos NO se eliminan, solo se desvinculan."""
     _require_grupos()
     ok = app_state.grupos.borrar_carpeta(carpeta_id)
     if not ok:
