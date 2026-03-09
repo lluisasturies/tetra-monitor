@@ -57,6 +57,31 @@ RECORDING_ENABLED  = cfg["audio"].get("recording_enabled", True)
 PROCESSING_ENABLED = cfg["pei"].get("processing_enabled", True)
 TELEGRAM_ENABLED = cfg["telegram"].get("enabled", True)
 
+# ---------------------------
+# Validar variables de entorno obligatorias
+# ---------------------------
+_env_errors = []
+
+if not os.getenv("DB_USER"):
+    _env_errors.append("DB_USER")
+if not os.getenv("DB_PASSWORD"):
+    _env_errors.append("DB_PASSWORD")
+if TELEGRAM_ENABLED and not os.getenv("TELEGRAM_TOKEN"):
+    _env_errors.append("TELEGRAM_TOKEN")
+if TELEGRAM_ENABLED and not os.getenv("TELEGRAM_CHAT_ID"):
+    _env_errors.append("TELEGRAM_CHAT_ID")
+if not os.getenv("JWT_SECRET"):
+    _env_errors.append("JWT_SECRET")
+if not os.getenv("API_USER"):
+    _env_errors.append("API_USER")
+if not os.getenv("API_PASSWORD"):
+    _env_errors.append("API_PASSWORD")
+
+if _env_errors:
+    for var in _env_errors:
+        logger.critical(f"Variable de entorno obligatoria no definida: {var}")
+    sys.exit(1)
+
 # Leer credenciales exclusivamente desde .env
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_USER = os.getenv("DB_USER", "")
