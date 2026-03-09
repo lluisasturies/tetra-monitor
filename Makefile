@@ -23,7 +23,7 @@ help:
 	@echo "  make logs-file          Muestra los logs en tiempo real (fichero)"
 	@echo "  make install-service    Instala tetra-monitor como servicio systemd"
 	@echo "  make uninstall-service  Elimina el servicio systemd"
-	@echo "  make update             git pull + reinicia el servicio"
+	@echo "  make update             git pull + reinicia el servicio si está activo"
 	@echo ""
 
 setup:
@@ -66,5 +66,4 @@ uninstall-service:
 
 update:
 	git pull
-	sudo systemctl restart $(SERVICE_NAME)
-	@echo "Actualización completada"
+	@sudo systemctl is-active --quiet $(SERVICE_NAME) && sudo systemctl restart $(SERVICE_NAME) && echo "Servicio reiniciado" || echo "Servicio no activo, omitiendo reinicio"
