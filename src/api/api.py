@@ -40,6 +40,12 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
+def _safe_username(username: str) -> str:
+    """Trunca el username a 32 chars para evitar filtrar contraseñas en los logs."""
+    cleaned = username[:32]
+    return cleaned if len(username) <= 32 else cleaned + "…"
+
+
 def create_access_token(username: str) -> str:
     payload = {
         "sub": username,
@@ -88,11 +94,11 @@ def health(request: Request):
 def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     """Obtener access token y refresh token con usuario y contraseña"""
     if form_data.username != API_USER or not pwd_context.verify(form_data.password, API_PASSWORD_HASH):
-        logger.warning(f"Intento de login fallido para usuario '{form_data.username}'")
+        logger.warning(f"Intento de login fallido para usuario '{_safe_username(form_data.username)}'")
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     access_token  = create_access_token(form_data.username)
     refresh_token = create_refresh_token()
-    logger.info(f"Login correcto para '{form_data.username}'")
+    logger.info(f"Login correcto para '{_safe_username(form_data.username)}'")
     return {
         "access_token":  access_token,
         "refresh_token": refresh_token,
@@ -148,14 +154,20 @@ def llamada_detalle(request: Request, llamada_id: int):
 @app.post("/update-gssi", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def update_gssi(request: Request, update: GSSIUpdate):
-    app_state.scan_config.update_gssi(update.gssi)
+    try:
+        app_state.scan_config.update_gssi(update.gssi)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return {"status": "ok", "gssi": app_state.scan_config.gssi}
 
 
 @app.post("/update-scanlist", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def update_scanlist(request: Request, update: ScanListUpdate):
-    app_state.scan_config.update_scan_list(update.scan_list)
+    try:
+        app_state.scan_config.update_scan_list(update.scan_list)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return {"status": "ok", "scan_list": app_state.scan_config.scan_list}
 
 
