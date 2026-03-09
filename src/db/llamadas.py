@@ -27,6 +27,7 @@ class LlamadasDB:
             self.pool.putconn(conn)
 
     def listar(self, limit: int = 100) -> list:
+        """Listado simple sin filtros (compatibilidad interna)."""
         conn = self.pool.getconn()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -38,6 +39,53 @@ class LlamadasDB:
         except Exception as e:
             logger.error(f"Error listando llamadas: {e}")
             return []
+        finally:
+            self.pool.putconn(conn)
+
+    def listar_filtrado(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        gssi: int | None = None,
+        ssi: int | None = None,
+        texto: str | None = None,
+    ) -> tuple[list, int]:
+        """
+        Listado con paginación y filtros opcionales.
+        Devuelve (filas, total) donde total es el número de resultados sin paginar.
+        """
+        conditions = []
+        params: list = []
+
+        if gssi is not None:
+            conditions.append("grupo = %s")
+            params.append(gssi)
+        if ssi is not None:
+            conditions.append("ssi = %s")
+            params.append(ssi)
+        if texto:
+            conditions.append("texto ILIKE %s")
+            params.append(f"%{texto}%")
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        conn = self.pool.getconn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Total de resultados (sin paginar)
+                cur.execute(f"SELECT COUNT(*) FROM llamadas {where}", params)
+                total = cur.fetchone()["count"]
+
+                # Página solicitada
+                cur.execute(
+                    f"SELECT * FROM llamadas {where} ORDER BY timestamp DESC LIMIT %s OFFSET %s",
+                    params + [limit, offset]
+                )
+                rows = cur.fetchall()
+            return rows, total
+        except Exception as e:
+            logger.error(f"Error en listar_filtrado: {e}")
+            return [], 0
         finally:
             self.pool.putconn(conn)
 

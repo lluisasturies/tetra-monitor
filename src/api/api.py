@@ -31,9 +31,6 @@ JWT_ALGORITHM      = "HS256"
 ACCESS_TOKEN_HOURS = 1
 REFRESH_TOKEN_DAYS = 7
 
-# CORS — orígenes permitidos desde .env (separados por coma)
-# Ejemplo: CORS_ORIGINS=http://192.168.1.100:3000,https://mi-panel.local
-# Si no se define, solo se permite localhost en desarrollo
 _cors_env = os.getenv("CORS_ORIGINS", "")
 CORS_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()] or ["http://localhost"]
 
@@ -55,7 +52,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 def _safe_username(username: str) -> str:
     cleaned = username[:32]
     return cleaned if len(username) <= 32 else cleaned + "…"
-
 
 def _require_llamadas():
     if app_state.llamadas is None:
@@ -154,10 +150,24 @@ def logout(request: Request, body: RefreshRequest):
 
 @app.get("/calls", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
-def listar_llamadas(request: Request, limit: int = Query(default=50, ge=1, le=500)):
+def listar_llamadas(
+    request: Request,
+    limit: int  = Query(default=50, ge=1, le=500, description="Resultados por página"),
+    offset: int = Query(default=0,  ge=0,         description="Desplazamiento para paginación"),
+    gssi:   int | None = Query(default=None, description="Filtrar por GSSI (grupo)"),
+    ssi:    int | None = Query(default=None, description="Filtrar por SSI (emisor)"),
+    texto:  str | None = Query(default=None, description="Buscar en transcripción (contiene)"),
+):
     _require_llamadas()
-    llamadas = app_state.llamadas.listar(limit)
-    return JSONResponse([dict(l) for l in llamadas])
+    rows, total = app_state.llamadas.listar_filtrado(
+        limit=limit, offset=offset, gssi=gssi, ssi=ssi, texto=texto
+    )
+    return {
+        "total":   total,
+        "limit":   limit,
+        "offset":  offset,
+        "results": [dict(r) for r in rows],
+    }
 
 
 @app.get("/calls/{llamada_id}", dependencies=[Depends(verify_token)])
