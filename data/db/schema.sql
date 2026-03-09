@@ -1,6 +1,7 @@
 -- ================================================
 -- TETRA Monitor — Schema PostgreSQL
 -- Ejecutar via setup.sh (lee credenciales del .env)
+-- @@DB_USER@@ se sustituye por el valor de DB_USER en .env
 -- ================================================
 
 -- Tabla de llamadas (solo las que disparan una keyword)
@@ -18,10 +19,10 @@ CREATE INDEX IF NOT EXISTS idx_llamadas_grupo     ON llamadas (grupo);
 CREATE INDEX IF NOT EXISTS idx_llamadas_ssi       ON llamadas (ssi);
 
 -- Permisos
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO tetra;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO tetra;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO @@DB_USER@@;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO @@DB_USER@@;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT ALL PRIVILEGES ON TABLES TO tetra;
+    GRANT ALL PRIVILEGES ON TABLES TO @@DB_USER@@;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT ALL PRIVILEGES ON SEQUENCES TO tetra;
+    GRANT ALL PRIVILEGES ON SEQUENCES TO @@DB_USER@@;
