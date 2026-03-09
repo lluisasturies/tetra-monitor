@@ -61,8 +61,8 @@ def _require_llamadas():
     if app_state.llamadas is None:
         raise HTTPException(status_code=503, detail="Servicio no disponible aún")
 
-def _require_radio_config():
-    if app_state.radio_config is None:
+def _require_afiliacion():
+    if app_state.afiliacion is None:
         raise HTTPException(status_code=503, detail="Servicio no disponible aún")
 
 def _require_grupos():
@@ -215,39 +215,39 @@ def llamada_detalle(request: Request, llamada_id: int):
 
 
 # ------------------------------------------------------------------
-# Radio config (GSSI y scan list activos en el radio)
+# Afiliación (GSSI y scan list activos en el radio)
 # ------------------------------------------------------------------
 
-@app.get("/radio-config", dependencies=[Depends(verify_token)])
+@app.get("/afiliacion", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
-def get_radio_config(request: Request):
-    _require_radio_config()
+def get_afiliacion(request: Request):
+    _require_afiliacion()
     return {
-        "gssi":      app_state.radio_config.gssi,
-        "scan_list": app_state.radio_config.scan_list,
+        "gssi":      app_state.afiliacion.gssi,
+        "scan_list": app_state.afiliacion.scan_list,
     }
 
 
-@app.post("/radio-config/gssi", dependencies=[Depends(verify_token)])
+@app.post("/afiliacion/gssi", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def update_gssi(request: Request, update: GSSIUpdate):
-    _require_radio_config()
+    _require_afiliacion()
     try:
-        app_state.radio_config.update_gssi(update.gssi)
+        app_state.afiliacion.update_gssi(update.gssi)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return {"status": "ok", "gssi": app_state.radio_config.gssi}
+    return {"status": "ok", "gssi": app_state.afiliacion.gssi}
 
 
-@app.post("/radio-config/scan-list", dependencies=[Depends(verify_token)])
+@app.post("/afiliacion/scan-list", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def update_scanlist(request: Request, update: ScanListUpdate):
-    _require_radio_config()
+    _require_afiliacion()
     try:
-        app_state.radio_config.update_scan_list(update.scan_list)
+        app_state.afiliacion.update_scan_list(update.scan_list)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return {"status": "ok", "scan_list": app_state.radio_config.scan_list}
+    return {"status": "ok", "scan_list": app_state.afiliacion.scan_list}
 
 
 # ------------------------------------------------------------------

@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from core.logger import logger, set_level
-from core.radio_config import RadioConfig
+from core.afiliacion import AfiliacionConfig
 from audio.audio_buffer import AudioBuffer
 from core.stt_processor import STTProcessor
 from filters.keyword_filter import KeywordFilter
@@ -23,20 +23,20 @@ from streaming import create_streamer
 from app_state import app_state
 
 print()
-print("░▀██░░█▀▀░▀██░█▀▄░█▀▀░░░░░█▄█░█▀▀░█▀▀░▀██░▀██░█▀▀░█▀▄")
-print("░░█░░█▀▀░░█░░█▀▄░█▀▀░▄▄▄░█░█░█░░░░█░█░░░█░░█░░█░█░█▀▄")
-print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀▀▀░░▀▀▀░░▀░░▀▀▀░▀░▀")
+print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀▀░░░░░█▄█░█▀▀░█▀▀░▀█▀░▀█▀░█▀▀░█▀▄")
+print("░░█░░█▀▀░░█░░█▀▄░█▀▀░▄▄▄░█░█░█░░░█░█░░█░░░█░░█░█░█▀▄")
+print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀▀▀░▀▀▀░░▀░░▀▀▀░▀░▀")
 print("2026 © Lluis de la Rubia / LluisAsturies")
 print()
 
 # ---------------------------
 # Definir rutas del proyecto
 # ---------------------------
-PROJECT_ROOT  = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-CONFIG_PATH   = os.path.join(PROJECT_ROOT, "config", "config.yaml")
-KEYWORDS_PATH = os.path.join(PROJECT_ROOT, "config", "keywords.yaml")
-SCAN_PATH     = os.path.join(PROJECT_ROOT, "config", "scan.yaml")
-GRUPOS_PATH   = os.path.join(PROJECT_ROOT, "config", "grupos.yaml")
+PROJECT_ROOT    = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+CONFIG_PATH     = os.path.join(PROJECT_ROOT, "config", "config.yaml")
+KEYWORDS_PATH   = os.path.join(PROJECT_ROOT, "config", "keywords.yaml")
+AFILIACION_PATH = os.path.join(PROJECT_ROOT, "config", "afiliacion.yaml")
+GRUPOS_PATH     = os.path.join(PROJECT_ROOT, "config", "grupos.yaml")
 
 # ---------------------------
 # Cargar configuración
@@ -98,10 +98,10 @@ except RuntimeError as e:
     sys.exit(1)
 
 # ---------------------------
-# Inicializar radio config
+# Inicializar afiliacion config
 # ---------------------------
-radio_config = RadioConfig(SCAN_PATH)
-app_state.radio_config = radio_config
+afiliacion = AfiliacionConfig(AFILIACION_PATH)
+app_state.afiliacion = afiliacion
 
 # ---------------------------
 # Inicializar pool y repositorios
@@ -175,7 +175,7 @@ pei_daemon = PEIDaemon(
     stt_processor=stt,
     keyword_filter=kf,
     llamadas_db=llamadas_db,
-    scan_config=radio_config,
+    afiliacion=afiliacion,
     bot=bot,
     port=cfg["pei"].get("port", ""),
     baudrate=cfg["pei"]["baudrate"],

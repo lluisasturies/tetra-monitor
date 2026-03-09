@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from db.llamadas import LlamadasDB
     from db.grupos import GruposDB
     from integrations.telegram_bot import TelegramBot
-    from core.radio_config import RadioConfig
+    from core.afiliacion import AfiliacionConfig
 
 
 class AppState:
@@ -15,7 +15,7 @@ class AppState:
     llamadas: LlamadasDB | None = None
     grupos: GruposDB | None = None
     bot: TelegramBot | None = None
-    radio_config: RadioConfig | None = None
+    afiliacion: AfiliacionConfig | None = None
     refresh_tokens: set[str] = set()  # tokens válidos en memoria
 
 

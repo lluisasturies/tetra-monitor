@@ -1,3 +1,3 @@
-# Este fichero ha sido reemplazado por core/radio_config.py
+# Este fichero ha sido reemplazado por core/afiliacion.py
 # Mantenido temporalmente para evitar errores en importaciones antiguas.
-from core.radio_config import RadioConfig as ScanConfig  # noqa: F401
+from core.afiliacion import AfiliacionConfig as ScanConfig  # noqa: F401

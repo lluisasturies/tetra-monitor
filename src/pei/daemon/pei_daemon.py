@@ -2,18 +2,18 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from core.logger import logger, calls_logger
-from core.radio_config import RadioConfig
+from core.afiliacion import AfiliacionConfig
 from audio.audio_cleanup import AudioCleanup
 from pei.models.pei_event import PEIEvent
 from db.llamadas import LlamadasDB
 
-SCAN_CONFIG_CHECK_INTERVAL = 5
+AFILIACION_CHECK_INTERVAL = 5
 STT_MAX_WORKERS = 1
 
 
 class PEIDaemon:
     def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter,
-                 llamadas_db: LlamadasDB, scan_config: RadioConfig, bot,
+                 llamadas_db: LlamadasDB, afiliacion: AfiliacionConfig, bot,
                  port="", baudrate=9600, audio_output_dir="", retention_days=7,
                  recording_enabled=True, processing_enabled=True, save_all_calls=False):
         self.motorola_pei_cls = motorola_pei_cls
@@ -21,7 +21,7 @@ class PEIDaemon:
         self.stt_processor = stt_processor
         self.keyword_filter = keyword_filter
         self.llamadas_db = llamadas_db
-        self.scan_config = scan_config
+        self.afiliacion = afiliacion
         self.bot = bot
         self.port = port
         self.baudrate = baudrate
@@ -29,29 +29,29 @@ class PEIDaemon:
         self.processing_enabled = processing_enabled
         self.save_all_calls = save_all_calls
         self.radio = None
-        self._last_config_check = 0.0
+        self._last_afiliacion_check = 0.0
         self._current_grupo = 0
         self._current_ssi = 0
         self._executor = ThreadPoolExecutor(max_workers=STT_MAX_WORKERS)
         self._cleanup = AudioCleanup(audio_output_dir, retention_days)
         self._init_radio()
 
-    def _apply_scan_config(self):
+    def _apply_afiliacion(self):
         logger.info(
-            f"[PEI] Aplicando radio config — "
-            f"gssi='{self.scan_config.gssi}', scan_list='{self.scan_config.scan_list}'"
+            f"[PEI] Aplicando afiliación — "
+            f"gssi='{self.afiliacion.gssi}', scan_list='{self.afiliacion.scan_list}'"
         )
-        if self.scan_config.gssi:
-            self.radio.set_active_gssi(self.scan_config.gssi)
-        if self.scan_config.scan_list:
-            self.radio.set_scan_list(self.scan_config.scan_list)
+        if self.afiliacion.gssi:
+            self.radio.set_active_gssi(self.afiliacion.gssi)
+        if self.afiliacion.scan_list:
+            self.radio.set_scan_list(self.afiliacion.scan_list)
 
     def _init_radio(self):
         puerto = self.port or "/dev/ttyUSB0"
         try:
             self.radio = self.motorola_pei_cls(puerto, self.baudrate)
             logger.info(f"Motorola PEI inicializado en {puerto}")
-            self._apply_scan_config()
+            self._apply_afiliacion()
             self.bot.radio_active = True
             logger.info("[Telegram] Alertas activadas — radio conectada")
         except Exception as e:
@@ -75,14 +75,14 @@ class PEIDaemon:
         except Exception as e:
             logger.error(f"[PEI] Reconexión fallida: {e}")
 
-    def _check_scan_config(self):
+    def _check_afiliacion(self):
         now = time.monotonic()
-        if now - self._last_config_check < SCAN_CONFIG_CHECK_INTERVAL:
+        if now - self._last_afiliacion_check < AFILIACION_CHECK_INTERVAL:
             return
-        self._last_config_check = now
-        if self.scan_config.reload_if_changed():
+        self._last_afiliacion_check = now
+        if self.afiliacion.reload_if_changed():
             if self.radio:
-                self._apply_scan_config()
+                self._apply_afiliacion()
 
     def _process_audio(self, path: str, grupo: int, ssi: int):
         try:
@@ -133,7 +133,7 @@ class PEIDaemon:
                 path = self.audio_buffer.stop_recording(filename)
                 if path:
                     grupo = self._current_grupo
-                    ssi = self._current_ssi
+                    ssi   = self._current_ssi
                     self._executor.submit(self._process_audio, path, grupo, ssi)
                     logger.debug(f"Transcripción encolada para {path}")
             else:
@@ -141,7 +141,7 @@ class PEIDaemon:
 
         elif event.type == "CALL_START":
             self._current_grupo = event.grupo
-            self._current_ssi = event.ssi
+            self._current_ssi   = event.ssi
             logger.info(f"CALL START — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
             calls_logger.info(f"CALL_START | grupo={self._current_grupo} | ssi={self._current_ssi}")
 
@@ -153,7 +153,7 @@ class PEIDaemon:
             logger.info(f"CALL END — Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
             calls_logger.info(f"CALL_END | grupo={self._current_grupo} | ssi={self._current_ssi}")
             self._current_grupo = 0
-            self._current_ssi = 0
+            self._current_ssi   = 0
 
         elif event.type == "TX_DEMAND":
             logger.debug("[PEI] TX_DEMAND recibido (radio transmitiendo)")
@@ -175,7 +175,7 @@ class PEIDaemon:
                     time.sleep(2)
                     continue
 
-                self._check_scan_config()
+                self._check_afiliacion()
                 self.keyword_filter.reload_if_changed()
                 self._cleanup.run_if_due()
 
