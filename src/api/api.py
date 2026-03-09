@@ -1,11 +1,14 @@
 import os
 from datetime import datetime, timedelta
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from jose import JWTError, jwt
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
 
@@ -24,7 +27,11 @@ if not API_USER or not API_PASSWORD:
 JWT_ALGORITHM    = "HS256"
 JWT_EXPIRY_HOURS = 24
 
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="TETRA Monitor API", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
@@ -55,13 +62,15 @@ class ScanListUpdate(BaseModel):
 
 
 @app.get("/health")
-def health():
+@limiter.limit("30/minute")
+def health(request: Request):
     """Endpoint público para healthcheck — sin autenticación"""
     return {"status": "ok"}
 
 
 @app.post("/auth/token")
-def login(form_data: OAuth2PasswordRequestForm = Depends()):
+@limiter.limit("5/minute")
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     """Obtener un token JWT con usuario y contraseña"""
     if form_data.username != API_USER or form_data.password != API_PASSWORD:
         logger.warning(f"Intento de login fallido para usuario '{form_data.username}'")
@@ -72,13 +81,15 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 
 @app.get("/calls", dependencies=[Depends(verify_token)])
-def listar_llamadas(limit: int = Query(default=50, ge=1, le=500)):
+@limiter.limit("60/minute")
+def listar_llamadas(request: Request, limit: int = Query(default=50, ge=1, le=500)):
     llamadas = app_state.llamadas.listar(limit)
     return JSONResponse([dict(l) for l in llamadas])
 
 
 @app.get("/calls/{llamada_id}", dependencies=[Depends(verify_token)])
-def llamada_detalle(llamada_id: int):
+@limiter.limit("60/minute")
+def llamada_detalle(request: Request, llamada_id: int):
     llamada = app_state.llamadas.obtener(llamada_id)
     if not llamada:
         raise HTTPException(status_code=404, detail="Llamada no encontrada")
@@ -86,17 +97,20 @@ def llamada_detalle(llamada_id: int):
 
 
 @app.post("/update-gssi", dependencies=[Depends(verify_token)])
-def update_gssi(update: GSSIUpdate):
+@limiter.limit("60/minute")
+def update_gssi(request: Request, update: GSSIUpdate):
     app_state.scan_config.update_gssi(update.gssi)
     return {"status": "ok", "gssi": app_state.scan_config.gssi}
 
 
 @app.post("/update-scanlist", dependencies=[Depends(verify_token)])
-def update_scanlist(update: ScanListUpdate):
+@limiter.limit("60/minute")
+def update_scanlist(request: Request, update: ScanListUpdate):
     app_state.scan_config.update_scan_list(update.scan_list)
     return {"status": "ok", "scan_list": app_state.scan_config.scan_list}
 
 
 @app.get("/scan-config", dependencies=[Depends(verify_token)])
-def get_scan_config():
+@limiter.limit("60/minute")
+def get_scan_config(request: Request):
     return {"gssi": app_state.scan_config.gssi, "scan_list": app_state.scan_config.scan_list}
