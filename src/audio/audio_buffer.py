@@ -5,6 +5,10 @@ import soundfile as sf
 import os
 from core.logger import logger
 
+# Número de samples por chunk — debe coincidir con el blocksize de sd.InputStream
+BLOCK_SIZE = 1024
+
+
 class AudioBuffer:
     def __init__(self, device_index, sample_rate, channels, prebuffer_seconds, output_dir):
         self.device_index = device_index
@@ -13,8 +17,11 @@ class AudioBuffer:
         self.prebuffer_seconds = prebuffer_seconds
         self.output_dir = output_dir
 
-        # Cola de pre-buffer para grabación — tamaño fijo, descarta el chunk más antiguo si está llena
-        self._record_buffer = queue.Queue(maxsize=prebuffer_seconds * sample_rate)
+        # Número de chunks necesarios para cubrir prebuffer_seconds
+        prebuffer_chunks = max(1, int(prebuffer_seconds * sample_rate / BLOCK_SIZE))
+
+        # Cola de pre-buffer para grabación — tamaño fijo en chunks, descarta el más antiguo si está llena
+        self._record_buffer = queue.Queue(maxsize=prebuffer_chunks)
 
         # Cola para streaming — sin límite de tamaño, el streamer la drena a su ritmo
         self._stream_queue = queue.Queue()
@@ -23,6 +30,11 @@ class AudioBuffer:
         self.frames = []
         self._stream = None
         os.makedirs(self.output_dir, exist_ok=True)
+
+        logger.info(
+            f"AudioBuffer configurado — prebuffer: {prebuffer_seconds}s "
+            f"({prebuffer_chunks} chunks x {BLOCK_SIZE} samples)"
+        )
 
     def start_buffer(self):
         def callback(indata, frames, time_info, status):
@@ -50,6 +62,7 @@ class AudioBuffer:
             device=self.device_index,
             channels=self.channels,
             samplerate=self.sample_rate,
+            blocksize=BLOCK_SIZE,
             callback=callback
         )
         self._stream.start()
