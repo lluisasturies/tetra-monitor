@@ -1,25 +1,7 @@
 -- ================================================
 -- TETRA Monitor — Schema PostgreSQL
--- Ejecutar como superusuario: sudo -u postgres psql -f schema.sql
+-- Ejecutar via setup.sh (lee credenciales del .env)
 -- ================================================
-
--- Crear usuario de la app si no existe
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'tetra') THEN
-        CREATE USER tetra WITH PASSWORD 'changeme';
-    END IF;
-END $$;
-
--- Crear base de datos si no existe
-SELECT 'CREATE DATABASE tetra OWNER tetra'
-WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tetra')\gexec
-
--- Conectar a la base de datos
-\c tetra
-
--- Privilegios sobre la base de datos
-GRANT ALL PRIVILEGES ON DATABASE tetra TO tetra;
-GRANT ALL ON SCHEMA public TO tetra;
 
 -- Tabla de eventos
 CREATE TABLE IF NOT EXISTS eventos (
