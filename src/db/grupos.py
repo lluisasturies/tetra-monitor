@@ -136,8 +136,7 @@ class GruposDB:
 
         except Exception as e:
             conn.rollback()
-            import traceback
-            logger.error(f"[GruposDB] Error cargando semilla: {e}\n{traceback.format_exc()}")
+            logger.error(f"[GruposDB] Error cargando semilla: {e}")
             return False
         finally:
             conn.autocommit = True
