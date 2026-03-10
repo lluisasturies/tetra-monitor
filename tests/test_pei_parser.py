@@ -71,8 +71,18 @@ def test_cticn_sin_ssi_suficientes_campos(pei):
     assert event.ssi == 0
 
 
-def test_cticn_malformado_devuelve_none(pei):
+def test_cticn_pocos_campos_usa_fallback(pei):
+    # Con menos de 4 campos el parser usa grupo=0, ssi=0 como fallback seguro
     event = pei._parse_event("+CTICN: abc,xyz")
+    assert event is not None
+    assert event.type == "CALL_START"
+    assert event.grupo == 0
+    assert event.ssi == 0
+
+
+def test_cticn_gssi_no_entero_devuelve_none(pei):
+    # Con >=4 campos pero el 4º no es entero, sí lanza ValueError → None
+    event = pei._parse_event("+CTICN: 1,0,0,GRUPO_MALO")
     assert event is None
 
 
