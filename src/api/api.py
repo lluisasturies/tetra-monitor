@@ -234,23 +234,26 @@ class CarpetaUpsert(BaseModel):
 def health(request: Request):
     """
     Healthcheck público. Devuelve:
-    - status:       'ok' si BD y PEI están activos, 'degraded' si no
-    - db:           True si el pool de BD está inicializado
-    - pei:          True si el daemon PEI está activo (afiliacion cargada)
-    - telegram:     True si el bot está configurado
-    - calls_today:  Número de llamadas guardadas hoy (null si BD no disponible)
-    - last_call_at: Timestamp ISO de la última llamada (null si no hay ninguna)
+    - status:           'ok' si BD, PEI y radio están activos; 'degraded' si no
+    - db:               True si el pool de BD está inicializado
+    - pei:              True si el daemon PEI está inicializado (AfiliacionConfig cargada)
+    - radio:            True si el PEI tiene conexión activa con la radio física
+    - telegram:         True si el bot está configurado
+    - calls_today:      Número de llamadas guardadas hoy (null si BD no disponible)
+    - last_call_at:     Timestamp ISO de la última llamada (null si no hay ninguna)
     """
     db_ok       = app_state.pool is not None
     pei_ok      = app_state.afiliacion is not None
+    radio_ok    = app_state.radio_connected
     telegram_ok = app_state.bot is not None
-    status      = "ok" if (db_ok and pei_ok) else "degraded"
+    status      = "ok" if (db_ok and pei_ok and radio_ok) else "degraded"
     metrics     = _get_db_metrics()
 
     return {
         "status":       status,
         "db":           db_ok,
         "pei":          pei_ok,
+        "radio":        radio_ok,
         "telegram":     telegram_ok,
         "calls_today":  metrics["calls_today"],
         "last_call_at": metrics["last_call_at"],
