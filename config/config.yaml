@@ -42,8 +42,9 @@ api:
 telegram:
   enabled: true     # false → desactiva Telegram completamente
   alerts:
-    startup: true             # Notificar cuando la aplicación arranca
-    shutdown: true            # Notificar cuando la aplicación se cierra
-    radio_connected: true     # Notificar cuando la radio se conecta al PEI
-    radio_disconnected: true  # Notificar cuando la radio se desconecta
-    afiliacion_changed: true  # Notificar cambios de GSSI o scan list
+    relevant_calls: true          # Notificar llamadas con keyword detectada
+    startup: true                 # Notificar cuando la aplicación arranca
+    shutdown: true                # Notificar cuando la aplicación se cierra
+    radio_connected: true         # Notificar cuando la radio se conecta al PEI
+    radio_disconnected: true      # Notificar cuando la radio se desconecta
+    afiliacion_changed: true      # Notificar cambios de GSSI o scan list

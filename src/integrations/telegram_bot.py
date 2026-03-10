@@ -18,13 +18,14 @@ class TelegramBot:
         self.enabled = enabled
         self.radio_active = False
 
-        # Flags de alertas de sistema — todos activos por defecto
+        # Flags de alertas — todos activos por defecto
         _a = alerts or {}
-        self._alert_startup            = _a.get("startup",            True)
-        self._alert_shutdown           = _a.get("shutdown",           True)
-        self._alert_radio_connected    = _a.get("radio_connected",    True)
-        self._alert_radio_disconnected = _a.get("radio_disconnected", True)
-        self._alert_afiliacion_changed = _a.get("afiliacion_changed", True)
+        self._alert_relevant_calls        = _a.get("relevant_calls",        True)
+        self._alert_startup               = _a.get("startup",               True)
+        self._alert_shutdown              = _a.get("shutdown",              True)
+        self._alert_radio_connected       = _a.get("radio_connected",       True)
+        self._alert_radio_disconnected    = _a.get("radio_disconnected",    True)
+        self._alert_afiliacion_changed    = _a.get("afiliacion_changed",    True)
 
     # ------------------------------------------------------------------
     # Alertas de llamada
@@ -33,6 +34,9 @@ class TelegramBot:
     def enviar_alerta(self, grupo: int, ssi: int, texto: str):
         if not self.enabled:
             logger.debug("[Telegram] Alerta ignorada — Telegram desactivado en config")
+            return
+        if not self._alert_relevant_calls:
+            logger.debug("[Telegram] Alerta de llamada ignorada — relevant_calls desactivado")
             return
         if not self.radio_active:
             logger.debug("[Telegram] Alerta ignorada — radio no conectada")
