@@ -1,5 +1,4 @@
 import time
-import psycopg2
 from psycopg2.pool import ThreadedConnectionPool
 from psycopg2 import OperationalError
 from core.logger import logger

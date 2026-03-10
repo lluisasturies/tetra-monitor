@@ -8,19 +8,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from core.logger import logger, set_level
-from core.afiliacion import AfiliacionConfig
-from audio.audio_buffer import AudioBuffer
-from core.stt_processor import STTProcessor
-from filters.keyword_filter import KeywordFilter
-from integrations.telegram_bot import TelegramBot
-from db.pool import DBPool
-from db.llamadas import LlamadasDB
-from db.grupos import GruposDB
-from pei.hardware.pei_motorola import MotorolaPEI
-from pei.daemon.pei_daemon import PEIDaemon
-from streaming import create_streamer
-from app_state import app_state
+from core.logger import logger, set_level  # noqa: E402
+from core.afiliacion import AfiliacionConfig  # noqa: E402
+from audio.audio_buffer import AudioBuffer  # noqa: E402
+from core.stt_processor import STTProcessor  # noqa: E402
+from filters.keyword_filter import KeywordFilter  # noqa: E402
+from integrations.telegram_bot import TelegramBot  # noqa: E402
+from db.pool import DBPool  # noqa: E402
+from db.llamadas import LlamadasDB  # noqa: E402
+from db.grupos import GruposDB  # noqa: E402
+from pei.hardware.pei_motorola import MotorolaPEI  # noqa: E402
+from pei.daemon.pei_daemon import PEIDaemon  # noqa: E402
+from streaming import create_streamer  # noqa: E402
+from app_state import app_state  # noqa: E402
 
 print()
 print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀▀░░░░░█▄█░█▀▀░█▀▀░▀█▀░▀█▀░█▀▀░█▀▄")
@@ -76,10 +76,14 @@ def _validate_env(cfg: dict) -> dict:
     telegram_enabled = cfg["telegram"].get("enabled", True)
     errors = []
 
-    if not os.getenv("DB_USER"):       errors.append("DB_USER")
-    if not os.getenv("DB_PASSWORD"):   errors.append("DB_PASSWORD")
-    if not os.getenv("JWT_SECRET"):    errors.append("JWT_SECRET")
-    if not os.getenv("API_USER"):      errors.append("API_USER")
+    if not os.getenv("DB_USER"):
+        errors.append("DB_USER")
+    if not os.getenv("DB_PASSWORD"):
+        errors.append("DB_PASSWORD")
+    if not os.getenv("JWT_SECRET"):
+        errors.append("JWT_SECRET")
+    if not os.getenv("API_USER"):
+        errors.append("API_USER")
 
     if not os.getenv("API_PASSWORD_HASH"):
         if os.getenv("API_PASSWORD"):
@@ -88,8 +92,10 @@ def _validate_env(cfg: dict) -> dict:
             errors.append("API_PASSWORD_HASH")
 
     if telegram_enabled:
-        if not os.getenv("TELEGRAM_TOKEN"):   errors.append("TELEGRAM_TOKEN")
-        if not os.getenv("TELEGRAM_CHAT_ID"): errors.append("TELEGRAM_CHAT_ID")
+        if not os.getenv("TELEGRAM_TOKEN"):
+            errors.append("TELEGRAM_TOKEN")
+        if not os.getenv("TELEGRAM_CHAT_ID"):
+            errors.append("TELEGRAM_CHAT_ID")
 
     if errors:
         for var in errors:
@@ -243,11 +249,11 @@ def main():
     pei_daemon                   = _init_pei(cfg, audio_buffer, stt, kf, llamadas_db, afiliacion, bot, audio_output_dir)
 
     # 4. Resumen de flags activos
-    streaming_enabled   = cfg.get("streaming", {}).get("enabled", False)
-    recording_enabled   = cfg["audio"].get("recording_enabled", True)
-    processing_enabled  = cfg["pei"].get("processing_enabled", True)
-    telegram_enabled    = cfg["telegram"].get("enabled", True)
-    save_all_calls      = cfg["database"].get("save_all_calls", False)
+    streaming_enabled  = cfg.get("streaming", {}).get("enabled", False)
+    recording_enabled  = cfg["audio"].get("recording_enabled", True)
+    processing_enabled = cfg["pei"].get("processing_enabled", True)
+    telegram_enabled   = cfg["telegram"].get("enabled", True)
+    save_all_calls     = cfg["database"].get("save_all_calls", False)
 
     logger.info(f"Grabación de audio       : {'ACTIVADA'  if recording_enabled  else 'DESACTIVADA'}")
     logger.info(f"Procesado PEI            : {'ACTIVADO'  if processing_enabled else 'DESACTIVADO'}")

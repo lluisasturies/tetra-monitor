@@ -1,5 +1,4 @@
 import os
-import tempfile
 import time
 import pytest
 import yaml
@@ -59,7 +58,6 @@ def test_reload_if_changed_sin_cambios(keywords_file):
 
 def test_reload_if_changed_con_cambios(keywords_file):
     kf = KeywordFilter(str(keywords_file))
-    # Forzar mtime diferente escribiendo de nuevo
     time.sleep(0.05)
     keywords_file.write_text(yaml.dump({"keywords": ["incendio", "inundación"]}))
     assert kf.reload_if_changed() is True
@@ -72,7 +70,5 @@ def test_reload_no_pierde_keywords_si_yaml_invalido(keywords_file):
     keywords_antes = kf.keywords.copy()
     time.sleep(0.05)
     keywords_file.write_text(": yaml: inválido: [")
-    # reload_if_changed no debe lanzar excepción
     kf.reload_if_changed()
-    # Las keywords anteriores deben mantenerse (error silencioso)
     assert kf.keywords == keywords_antes or kf.keywords == []
