@@ -239,6 +239,7 @@ def health(request: Request):
     - pei:              True si el daemon PEI está inicializado (AfiliacionConfig cargada)
     - radio:            True si el PEI tiene conexión activa con la radio física
     - telegram:         True si el bot está configurado
+    - streaming:        True si el streamer está corriendo (informativo, no afecta a status)
     - calls_today:      Número de llamadas guardadas hoy (null si BD no disponible)
     - last_call_at:     Timestamp ISO de la última llamada (null si no hay ninguna)
     """
@@ -246,6 +247,7 @@ def health(request: Request):
     pei_ok      = app_state.afiliacion is not None
     radio_ok    = app_state.radio_connected
     telegram_ok = app_state.bot is not None
+    streaming   = app_state.streaming_active
     status      = "ok" if (db_ok and pei_ok and radio_ok) else "degraded"
     metrics     = _get_db_metrics()
 
@@ -255,6 +257,7 @@ def health(request: Request):
         "pei":          pei_ok,
         "radio":        radio_ok,
         "telegram":     telegram_ok,
+        "streaming":    streaming,
         "calls_today":  metrics["calls_today"],
         "last_call_at": metrics["last_call_at"],
     }

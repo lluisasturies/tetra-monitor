@@ -18,6 +18,7 @@ class AppState:
     afiliacion: AfiliacionConfig | None = None
     refresh_tokens: set[str] = set()  # tokens válidos en memoria
     radio_connected: bool = False     # True si el PEI tiene conexión activa con la radio
+    streaming_active: bool = False    # True si el streamer está corriendo
 
 
 app_state = AppState()

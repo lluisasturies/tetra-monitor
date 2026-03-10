@@ -218,13 +218,16 @@ def _init_api(cfg: dict) -> threading.Thread:
 
 
 def _init_streaming(cfg: dict) -> object | None:
-    """Crea el streamer si está habilitado en config, o devuelve None."""
+    """Crea el streamer si está habilitado en config, actualiza app_state y devuelve el objeto."""
     stream_cfg = cfg.get("streaming", {})
     if not stream_cfg.get("enabled", False):
+        app_state.streaming_active = False
         return None
     stream_cfg["samplerate"] = cfg["audio"]["sample_rate"]
     stream_cfg["channels"]   = cfg["audio"]["channels"]
-    return create_streamer(stream_cfg)
+    streamer = create_streamer(stream_cfg)
+    app_state.streaming_active = streamer is not None and streamer.running
+    return streamer
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +271,7 @@ def main():
     # 6. Señales de sistema
     def _signal_handler(sig, frame):
         logger.info("Señal de interrupción recibida, cerrando aplicación...")
+        app_state.streaming_active = False
         pei_daemon.shutdown(streamer)
         pool.closeall()
         sys.exit(0)
@@ -288,6 +292,7 @@ def main():
         sys.exit(1)
     except KeyboardInterrupt:
         logger.info("Interrupción por teclado recibida")
+        app_state.streaming_active = False
         pei_daemon.shutdown(streamer)
         pool.closeall()
         sys.exit(0)
