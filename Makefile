@@ -8,7 +8,8 @@ SERVICE_TMPL  := $(PROJECT_ROOT)/scripts/tetra-monitor.service.template
 SERVICE_DEST  := /etc/systemd/system/$(SERVICE_NAME).service
 CURRENT_USER  := $(shell logname 2>/dev/null || echo $$SUDO_USER || echo $$USER)
 
-.PHONY: help setup setup-https set-password start stop restart logs install-service uninstall-service update status
+.PHONY: help setup setup-https set-password start stop restart logs logs-file \
+        install-service uninstall-service update status reload-grupos
 
 help:
 	@echo ""
@@ -26,6 +27,7 @@ help:
 	@echo "  make install-service    Instala tetra-monitor como servicio systemd"
 	@echo "  make uninstall-service  Elimina el servicio systemd"
 	@echo "  make update             git pull + reinicia el servicio si está activo"
+	@echo "  make reload-grupos      Recarga el catálogo desde config/grupos.yaml"
 	@echo ""
 
 setup:
@@ -75,3 +77,6 @@ uninstall-service:
 update:
 	git pull
 	@sudo systemctl is-active --quiet $(SERVICE_NAME) && sudo systemctl restart $(SERVICE_NAME) && echo "Servicio reiniciado" || echo "Servicio no activo, omitiendo reinicio"
+
+reload-grupos:
+	$(PROJECT_ROOT)/venv/bin/python3 scripts/reload_grupos.py
