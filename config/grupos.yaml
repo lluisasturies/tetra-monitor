@@ -22,6 +22,8 @@ carpetas:
   - nombre: "Emergencias"
     grupos: [36002, 36004]
 
+# Scan Lists -  Listas de escaneo 
+# Indican a la radio varios grupos para afiliarse simultáneamente
 scan_lists:
   - nombre: "ListaScan1"
     grupos: [36001, 36002, 36003]
