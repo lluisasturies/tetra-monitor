@@ -1,6 +1,8 @@
 logging:
   level: INFO       # INFO, WARNING, ERROR, CRITICAL
   console: true
+  max_mb: 10        # Tamaño máximo de cada fichero de log en MB
+  backup_count: 10  # Número de ficheros de log a conservar
 
 pei:
   port: "/dev/ttyUSB0"
