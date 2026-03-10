@@ -16,8 +16,8 @@ from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
 
-from core.logger import logger
-from app_state import app_state
+from core.logger import logger  # noqa: E402
+from app_state import app_state  # noqa: E402
 
 JWT_SECRET        = os.getenv("JWT_SECRET")
 API_USER          = os.getenv("API_USER")

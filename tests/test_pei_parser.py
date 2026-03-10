@@ -1,15 +1,12 @@
 import os
 import sys
 import pytest
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-# Stub de serial para no depender de hardware
-import unittest.mock as mock
 sys.modules.setdefault("serial", mock.MagicMock())
 
-from pei.hardware.pei_motorola import MotorolaPEI
-from pei.models.pei_event import PEIEvent
+from pei.hardware.pei_motorola import MotorolaPEI  # noqa: E402
 
 
 @pytest.fixture
@@ -59,7 +56,6 @@ def test_cdtxc_ptt_end(pei):
 # ---------------------------------------------------------------------------
 
 def test_cticn_call_start_con_gssi_y_ssi(pei):
-    # +CTICN: <cc>,<status>,<AI>,<gssi>,<id_type>,[<called_ssi>],[<calling_ssi>]
     event = pei._parse_event("+CTICN: 1,0,0,36001,0,,12345")
     assert event is not None
     assert event.type == "CALL_START"
@@ -68,7 +64,6 @@ def test_cticn_call_start_con_gssi_y_ssi(pei):
 
 
 def test_cticn_sin_ssi_suficientes_campos(pei):
-    # Solo 4 campos — ssi debe quedar a 0
     event = pei._parse_event("+CTICN: 1,0,0,36002")
     assert event is not None
     assert event.type == "CALL_START"
@@ -76,8 +71,18 @@ def test_cticn_sin_ssi_suficientes_campos(pei):
     assert event.ssi == 0
 
 
-def test_cticn_malformado_devuelve_none(pei):
+def test_cticn_pocos_campos_usa_fallback(pei):
+    # Con menos de 4 campos el parser usa grupo=0, ssi=0 como fallback seguro
     event = pei._parse_event("+CTICN: abc,xyz")
+    assert event is not None
+    assert event.type == "CALL_START"
+    assert event.grupo == 0
+    assert event.ssi == 0
+
+
+def test_cticn_gssi_no_entero_devuelve_none(pei):
+    # Con >=4 campos pero el 4º no es entero, sí lanza ValueError → None
+    event = pei._parse_event("+CTICN: 1,0,0,GRUPO_MALO")
     assert event is None
 
 
