@@ -9,7 +9,7 @@ SERVICE_DEST  := /etc/systemd/system/$(SERVICE_NAME).service
 CURRENT_USER  := $(shell logname 2>/dev/null || echo $$SUDO_USER || echo $$USER)
 
 .PHONY: help setup setup-https set-password start stop restart logs logs-file \
-        install-service uninstall-service update status reload-grupos
+        install-service uninstall-service update status reload-grupos backup-db
 
 help:
 	@echo ""
@@ -28,6 +28,7 @@ help:
 	@echo "  make uninstall-service  Elimina el servicio systemd"
 	@echo "  make update             git pull + reinicia el servicio si está activo"
 	@echo "  make reload-grupos      Recarga el catálogo desde config/grupos.yaml"
+	@echo "  make backup-db          Volcado de la BD en data/backups/"
 	@echo ""
 
 setup:
@@ -80,3 +81,6 @@ update:
 
 reload-grupos:
 	$(PROJECT_ROOT)/venv/bin/python3 scripts/reload_grupos.py
+
+backup-db:
+	bash scripts/backup_db.sh
