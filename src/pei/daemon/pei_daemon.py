@@ -6,6 +6,7 @@ from core.afiliacion import AfiliacionConfig
 from audio.audio_cleanup import AudioCleanup
 from pei.models.pei_event import PEIEvent
 from db.llamadas import LlamadasDB
+from app_state import app_state
 
 AFILIACION_CHECK_INTERVAL = 5
 STT_MAX_WORKERS = 1
@@ -36,6 +37,11 @@ class PEIDaemon:
         self._cleanup = AudioCleanup(audio_output_dir, retention_days)
         self._init_radio()
 
+    def _set_radio_connected(self, connected: bool):
+        """Actualiza el estado de conexión en app_state y en el bot."""
+        app_state.radio_connected = connected
+        self.bot.radio_active = connected
+
     def _apply_afiliacion(self):
         logger.info(
             f"[PEI] Aplicando afiliación — "
@@ -52,16 +58,16 @@ class PEIDaemon:
             self.radio = self.motorola_pei_cls(puerto, self.baudrate)
             logger.info(f"Motorola PEI inicializado en {puerto}")
             self._apply_afiliacion()
-            self.bot.radio_active = True
+            self._set_radio_connected(True)
             logger.info("[Telegram] Alertas activadas — radio conectada")
         except Exception as e:
             logger.critical(f"No se pudo inicializar PEI en {puerto}: {e}")
             self.radio = None
-            self.bot.radio_active = False
+            self._set_radio_connected(False)
 
     def _reconnect_radio(self):
         logger.warning("[PEI] Intentando reconectar radio...")
-        self.bot.radio_active = False
+        self._set_radio_connected(False)
         try:
             if self.radio:
                 self.radio.close()
@@ -200,7 +206,7 @@ class PEIDaemon:
 
     def shutdown(self, streamer=None):
         logger.info("Apagando PEI...")
-        self.bot.radio_active = False
+        self._set_radio_connected(False)
         self._executor.shutdown(wait=True)
 
         if streamer:
