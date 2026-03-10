@@ -19,15 +19,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install ruff pytest pyyaml
+        run: pip install ruff pytest pyyaml fastapi httpx python-jose bcrypt slowapi python-dotenv python-multipart
 
       - name: Lint (ruff)
         run: ruff check src/ tests/
 
       - name: Run tests
         run: pytest tests/ -v
-        env:
-          PYTHONPATH: src
 
   release-check:
     runs-on: ubuntu-latest

@@ -18,6 +18,34 @@ Sistema de monitorización de redes TETRA sobre Raspberry Pi. Escucha eventos PT
 
 ---
 
+## Arquitectura
+
+```mermaid
+flowchart TD
+    RADIO["📡 Radio TETRA\n(Motorola)"] -->|AT commands / serie| PEI
+
+    subgraph PROCESO["Proceso único en Raspberry Pi"]
+        PEI["PEI Daemon\n(pei_daemon.py)"] -->|evento PTT| AUDIO
+        AUDIO["AudioBuffer\n(sounddevice)"] -->|fichero WAV| STT
+        STT["STT Processor\n(Whisper)"] -->|texto| KF
+        KF["KeywordFilter"] -->|match| DB
+        KF -->|match| BOT
+        PEI -.->|recarga mtime| AFIL
+        AFIL["AfiliacionConfig\n(afiliacion.yaml)"] -.->|GSSI / scan list| PEI
+
+        API["API REST\n(FastAPI / hilo)"] -->|lee/escribe| DB
+        API -->|actualiza| AFIL
+    end
+
+    DB[("PostgreSQL\nllamadas / grupos")]
+    BOT["Telegram Bot"] -->|alerta| USER["👤 Operador"]
+    AUDIO -->|stream| ICE["Icecast / RTMP"]
+    API -->|HTTP/HTTPS| CLIENT["Cliente REST"]
+    NGINX["nginx (opcional)\nTLS proxy"] --> API
+```
+
+---
+
 ## Instalación
 
 ### 1. Clonar el repositorio
@@ -63,13 +91,12 @@ make set-password
 El script pide la contraseña dos veces, genera el hash bcrypt y lo escribe directamente en `.env`.
 
 ### 5. (Opcional) Personalizar el catálogo de grupos
-Edita `config/grupos.yaml` antes del primer arranque para definir los GSSIs y scan lists de tu red. En el primer arranque se cargan automáticamente en la BD. A partir de entonces el catálogo se gestiona directamente desde la BD (via API).
+Edita `config/grupos.yaml` antes del primer arranque para definir los GSSIs y scan lists de tu red. En el primer arranque se cargan automáticamente en la BD. A partir de entonces el catálogo se gestiona directamente desde la BD (vía API o con `make reload-grupos`).
 
 ```yaml
 grupos:
   - gssi: 36001
     nombre: "Operaciones"
-    descripcion: "Canal principal"
   - gssi: 36002
     nombre: "Emergencias"
 
@@ -103,6 +130,8 @@ make logs-file          # Muestra los logs en tiempo real (fichero local)
 make install-service    # Instala tetra-monitor como servicio systemd
 make uninstall-service  # Elimina el servicio systemd
 make update             # git pull + reinicia el servicio si está activo
+make reload-grupos      # Recarga catálogo de grupos desde config/grupos.yaml
+make backup-db          # Volcado de la BD en data/backups/
 ```
 
 ---
@@ -184,7 +213,7 @@ Respuesta:
 
 | Método | Endpoint | Auth | Descripción |
 |---|---|---|---|
-| `GET` | `/health` | No | Healthcheck público |
+| `GET` | `/health` | No | Healthcheck — estado de BD, PEI y Telegram |
 | `POST` | `/auth/token` | No | Login — obtener access + refresh token |
 | `POST` | `/auth/refresh` | No | Renovar access token con refresh token |
 | `POST` | `/auth/logout` | No | Invalidar refresh token |
@@ -197,56 +226,6 @@ Respuesta:
 | `GET` | `/groups/{gssi}` | Sí | Detalle de un grupo |
 | `POST` | `/groups` | Sí | Crear o actualizar un grupo (upsert) |
 | `GET` | `/scan-lists` | Sí | Listar scan lists con sus grupos |
-
-### Ejemplos
-```bash
-TOKEN=$(curl -s -X POST http://raspberrypi:8000/auth/token \
-  -d "username=admin&password=tu_password" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-
-# Listar llamadas con filtro
-curl -H "Authorization: Bearer $TOKEN" \
-  "http://raspberrypi:8000/calls?limit=10&gssi=36001"
-
-# Ver afiliación activa del radio
-curl -H "Authorization: Bearer $TOKEN" \
-  http://raspberrypi:8000/afiliacion
-
-# Cambiar GSSI activo
-curl -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"gssi": "36001"}' \
-  http://raspberrypi:8000/afiliacion/gssi
-
-# Listar catálogo de grupos
-curl -H "Authorization: Bearer $TOKEN" \
-  http://raspberrypi:8000/groups
-
-# Crear o actualizar un grupo
-curl -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"gssi": 36003, "nombre": "Logística", "descripcion": "Canal logístico", "activo": true}' \
-  http://raspberrypi:8000/groups
-
-# Ver scan lists con sus grupos
-curl -H "Authorization: Bearer $TOKEN" \
-  http://raspberrypi:8000/scan-lists
-```
-
----
-
-## Arquitectura
-El sistema corre en **un único proceso** con dos componentes concurrentes:
-
-- **Daemon PEI** — escucha la radio por puerto serie, graba audio, transcribe y alerta
-- **API REST** — corre en un hilo separado, expone endpoints para consultar llamadas y modificar la configuración
-
-La comunicación entre ambos se hace a través de `config/afiliacion.yaml`. Cuando la API actualiza el GSSI o la scan list activa, escribe en el fichero. El daemon comprueba el `mtime` cada 5 segundos y aplica los cambios a la radio si detecta modificaciones. Lo mismo aplica a `config/keywords.yaml`, que también se recarga en caliente.
-
-El **catálogo de grupos** (`grupos`, `scan_lists`, `scan_list_grupos`) vive en PostgreSQL y se usa para enriquecer las llamadas con el nombre del grupo. En el primer arranque se puede poblar desde `config/grupos.yaml` de forma automática; a partir de entonces se gestiona directamente en BD.
-
-Solo las llamadas que contienen alguna palabra clave se guardan en base de datos y generan alerta por Telegram. El audio de llamadas sin keyword se elimina automáticamente.
 
 ---
 
