@@ -22,14 +22,16 @@ from app_state import app_state  # noqa: E402
 @pytest.fixture(autouse=True)
 def reset_app_state():
     """Limpia app_state entre tests para evitar contaminación."""
-    app_state.pool       = None
-    app_state.llamadas   = None
-    app_state.grupos     = None
-    app_state.afiliacion = None
-    app_state.bot        = None
-    app_state.refresh_tokens = set()
+    app_state.pool             = None
+    app_state.llamadas         = None
+    app_state.grupos           = None
+    app_state.afiliacion       = None
+    app_state.bot              = None
+    app_state.radio_connected  = False
+    app_state.streaming_active = False
+    app_state.refresh_tokens   = set()
     yield
-    app_state.refresh_tokens = set()
+    app_state.refresh_tokens   = set()
 
 
 @pytest.fixture
@@ -59,18 +61,46 @@ def test_health_degraded_sin_subsistemas(client):
     assert data["status"] == "degraded"
     assert data["db"] is False
     assert data["pei"] is False
+    assert data["radio"] is False
+    assert data["streaming"] is False
 
 
 def test_health_ok_con_subsistemas_activos(client):
-    """Con BD y PEI mockeados el status debe ser 'ok'."""
-    app_state.pool = mock.MagicMock()
-    app_state.afiliacion = mock.MagicMock()
+    """Con BD, PEI y radio mockeados el status debe ser 'ok'."""
+    app_state.pool            = mock.MagicMock()
+    app_state.afiliacion      = mock.MagicMock()
+    app_state.radio_connected = True
     resp = client.get("/health")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
     assert data["db"] is True
     assert data["pei"] is True
+    assert data["radio"] is True
+
+
+def test_health_degraded_si_radio_desconectada(client):
+    """Con BD y PEI activos pero radio desconectada el status debe ser 'degraded'."""
+    app_state.pool       = mock.MagicMock()
+    app_state.afiliacion = mock.MagicMock()
+    # radio_connected = False (por defecto del fixture)
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "degraded"
+    assert data["radio"] is False
+
+
+def test_health_streaming_activo(client):
+    """El campo streaming refleja app_state.streaming_active."""
+    app_state.pool             = mock.MagicMock()
+    app_state.afiliacion       = mock.MagicMock()
+    app_state.radio_connected  = True
+    app_state.streaming_active = True
+    resp = client.get("/health")
+    data = resp.json()
+    assert data["streaming"] is True
+    assert data["status"] == "ok"  # streaming no afecta a status
 
 
 # ---------------------------------------------------------------------------

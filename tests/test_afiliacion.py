@@ -2,6 +2,7 @@ import os
 import sys
 import pytest
 import yaml
+import unittest.mock as mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -39,7 +40,6 @@ def test_update_gssi_valido(afiliacion_file):
     af = AfiliacionConfig(afiliacion_file)
     af.update_gssi("36002")
     assert af.gssi == "36002"
-    # Verifica persistencia en disco
     with open(afiliacion_file) as f:
         data = yaml.safe_load(f)
     assert data["afiliacion"]["gssi"] == "36002"
@@ -99,7 +99,54 @@ def test_save_y_reload(tmp_path):
     af.gssi = "36005"
     af.scan_list = "TestList"
     af.save()
-    # Nueva instancia que lee desde disco
     af2 = AfiliacionConfig(path)
     assert af2.gssi == "36005"
     assert af2.scan_list == "TestList"
+
+
+# ---------------------------------------------------------------------------
+# Notificaciones Telegram al cambiar afiliación
+# ---------------------------------------------------------------------------
+
+def test_update_gssi_notifica_telegram_si_hay_bot(afiliacion_file):
+    bot = mock.MagicMock()
+    af = AfiliacionConfig(afiliacion_file, bot=bot)
+    af.update_gssi("99999")
+    bot.notificar_cambio_afiliacion.assert_called_once_with("GSSI", "36001", "99999")
+
+
+def test_update_gssi_no_notifica_si_mismo_valor(afiliacion_file):
+    """Si el GSSI no cambia, no debe notificar."""
+    bot = mock.MagicMock()
+    af = AfiliacionConfig(afiliacion_file, bot=bot)
+    af.update_gssi("36001")  # mismo valor
+    bot.notificar_cambio_afiliacion.assert_not_called()
+
+
+def test_update_gssi_sin_bot_no_falla(afiliacion_file):
+    """Sin bot inyectado, update_gssi no debe lanzar excepción."""
+    af = AfiliacionConfig(afiliacion_file)  # bot=None por defecto
+    af.update_gssi("36002")  # no debe fallar
+    assert af.gssi == "36002"
+
+
+def test_update_scan_list_notifica_telegram_si_hay_bot(afiliacion_file):
+    bot = mock.MagicMock()
+    af = AfiliacionConfig(afiliacion_file, bot=bot)
+    af.update_scan_list("NuevaLista")
+    bot.notificar_cambio_afiliacion.assert_called_once_with("Scan List", "ListaScan1", "NuevaLista")
+
+
+def test_update_scan_list_no_notifica_si_mismo_valor(afiliacion_file):
+    bot = mock.MagicMock()
+    af = AfiliacionConfig(afiliacion_file, bot=bot)
+    af.update_scan_list("ListaScan1")  # mismo valor
+    bot.notificar_cambio_afiliacion.assert_not_called()
+
+
+def test_set_bot_inyecta_correctamente(afiliacion_file):
+    af = AfiliacionConfig(afiliacion_file)
+    assert af._bot is None
+    bot = mock.MagicMock()
+    af.set_bot(bot)
+    assert af._bot is bot
