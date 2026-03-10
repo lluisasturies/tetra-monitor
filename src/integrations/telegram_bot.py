@@ -20,11 +20,33 @@ class TelegramBot:
             return
 
         mensaje = (
-            f"🚨 *Alerta TETRA*\n"
+            f"\U0001f6a8 *Alerta TETRA*\n"
             f"Grupo: `{grupo}`\n"
             f"SSI: `{ssi}`\n"
             f"Transcripción: _{texto}_"
         )
+        self._send_with_retry(mensaje)
+
+    def notificar_cambio_afiliacion(self, tipo: str, anterior: str | None, nuevo: str | None):
+        """
+        Notifica un cambio de afiliación (GSSI o scan list).
+        tipo: 'GSSI' o 'Scan List'
+        anterior/nuevo: valor previo y nuevo (None se muestra como '(ninguna)')
+        """
+        if not self.enabled:
+            logger.debug("[Telegram] Notificación de afiliación ignorada — Telegram desactivado")
+            return
+
+        anterior_str = anterior or "(ninguna)"
+        nuevo_str    = nuevo    or "(ninguna)"
+
+        mensaje = (
+            f"\U0001f4e1 *Cambio de afiliación*\n"
+            f"Tipo: `{tipo}`\n"
+            f"Anterior: `{anterior_str}`\n"
+            f"Nuevo: `{nuevo_str}`"
+        )
+        logger.info(f"[Telegram] Notificando cambio de {tipo}: '{anterior_str}' -> '{nuevo_str}'")
         self._send_with_retry(mensaje)
 
     def _send_with_retry(self, mensaje: str):
@@ -41,7 +63,7 @@ class TelegramBot:
                     timeout=10
                 )
                 if resp.status_code == 200:
-                    logger.info("Alerta Telegram enviada correctamente")
+                    logger.info("Mensaje Telegram enviado correctamente")
                     return
                 else:
                     logger.warning(f"Telegram respondió {resp.status_code} (intento {intento})")
@@ -50,4 +72,4 @@ class TelegramBot:
 
             time.sleep(2 ** intento)
 
-        logger.error("No se pudo enviar la alerta por Telegram tras todos los reintentos")
+        logger.error("No se pudo enviar el mensaje por Telegram tras todos los reintentos")

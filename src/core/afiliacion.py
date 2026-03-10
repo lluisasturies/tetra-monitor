@@ -2,6 +2,10 @@ import re
 import yaml
 from pathlib import Path
 from core.logger import logger
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from integrations.telegram_bot import TelegramBot
 
 _RE_GSSI      = re.compile(r'^\d{1,8}$')
 _RE_SCAN_LIST = re.compile(r'^[\w\-]{1,32}$')
@@ -16,12 +20,17 @@ class AfiliacionConfig:
     No gestiona el catálogo de grupos — eso es responsabilidad de GruposDB.
     """
 
-    def __init__(self, filepath: str | Path):
+    def __init__(self, filepath: str | Path, bot: "TelegramBot | None" = None):
         self._filepath = Path(filepath)
+        self._bot = bot
         self.gssi: str = ""
         self.scan_list: str | None = None
         self._last_mtime: float = 0.0
         self._load()
+
+    def set_bot(self, bot: "TelegramBot"):
+        """Inyecta el bot después de la construcción (útil cuando main.py los inicializa por separado)."""
+        self._bot = bot
 
     def _load(self):
         if self._filepath.exists():
@@ -70,7 +79,7 @@ class AfiliacionConfig:
                 yaml.safe_dump({
                     "afiliacion": {
                         "gssi":      self.gssi,
-                        "scan_list": self.scan_list,  # None se serializa como null en YAML
+                        "scan_list": self.scan_list,
                     }
                 }, f)
             self._last_mtime = self._filepath.stat().st_mtime
@@ -81,9 +90,12 @@ class AfiliacionConfig:
     def update_gssi(self, gssi: str):
         if not _RE_GSSI.match(gssi):
             raise ValueError(f"Formato de GSSI inválido: '{gssi}' (solo dígitos, máx 8)")
+        anterior = self.gssi
         logger.info(f"Actualizando GSSI activo a: {gssi}")
         self.gssi = gssi
         self.save()
+        if self._bot and gssi != anterior:
+            self._bot.notificar_cambio_afiliacion("GSSI", anterior or None, gssi)
 
     def update_scan_list(self, scan_list: str | None):
         """
@@ -93,8 +105,9 @@ class AfiliacionConfig:
         if scan_list:
             if not _RE_SCAN_LIST.match(scan_list):
                 raise ValueError(f"Formato de scan list inválido: '{scan_list}' (alfanumérico y guión, máx 32)")
-            self.scan_list = scan_list
-        else:
-            self.scan_list = None
+        anterior = self.scan_list
+        self.scan_list = scan_list if scan_list else None
         logger.info(f"Actualizando scan list activa a: {self.scan_list or '(ninguna)'}")
         self.save()
+        if self._bot and self.scan_list != anterior:
+            self._bot.notificar_cambio_afiliacion("Scan List", anterior, self.scan_list)

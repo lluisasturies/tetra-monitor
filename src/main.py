@@ -241,13 +241,14 @@ def main():
 
     audio_output_dir = os.path.join(PROJECT_ROOT, cfg["audio"].get("output_dir", "data/audio"))
 
-    # 2. Afiliación (antes de importar la API, que accede a app_state)
+    # 2. Afiliación — se inicializa sin bot todavía (el bot se crea en el paso siguiente)
     afiliacion = AfiliacionConfig(AFILIACION_PATH)
     app_state.afiliacion = afiliacion
 
     # 3. Subsistemas
     pool, llamadas_db, grupos_db = _init_db(cfg, env)
     bot                          = _init_bot(cfg, env)
+    afiliacion.set_bot(bot)  # inyectar bot una vez disponible
     audio_buffer, stt, kf        = _init_audio(cfg, audio_output_dir)
     pei_daemon                   = _init_pei(cfg, audio_buffer, stt, kf, llamadas_db, afiliacion, bot, audio_output_dir)
 
