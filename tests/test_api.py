@@ -47,35 +47,30 @@ def client(monkeypatch):
     return TestClient(app, raise_server_exceptions=True)
 
 
-@pytest.fixture
-def auth_token(client, monkeypatch):
-    """Obtiene un token JWT válido para tests autenticados."""
-    import bcrypt
-    password = "testpass"
-    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    monkeypatch.setenv("API_PASSWORD_HASH", hashed)
-
-    # Reimportar con el nuevo hash
-    import importlib
-    import api.api as api_module
-    importlib.reload(api_module)
-    monkeypatch.setattr("api.api._init_standalone", lambda: None)
-
-    from fastapi.testclient import TestClient
-    c = TestClient(api_module.app)
-    resp = c.post("/auth/token", data={"username": "admin", "password": password})
-    assert resp.status_code == 200
-    return resp.json()["access_token"], c
-
-
 # ---------------------------------------------------------------------------
 # /health
 # ---------------------------------------------------------------------------
 
-def test_health_ok(client):
+def test_health_degraded_sin_subsistemas(client):
+    """Sin BD ni PEI inicializados el status debe ser 'degraded'."""
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json()["status"] == "ok"
+    data = resp.json()
+    assert data["status"] == "degraded"
+    assert data["db"] is False
+    assert data["pei"] is False
+
+
+def test_health_ok_con_subsistemas_activos(client):
+    """Con BD y PEI mockeados el status debe ser 'ok'."""
+    app_state.pool = mock.MagicMock()
+    app_state.afiliacion = mock.MagicMock()
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["db"] is True
+    assert data["pei"] is True
 
 
 # ---------------------------------------------------------------------------
