@@ -201,7 +201,24 @@ class CarpetaUpsert(BaseModel):
 @app.get("/health")
 @limiter.limit("30/minute")
 def health(request: Request):
-    return {"status": "ok"}
+    """
+    Healthcheck público. Devuelve el estado real de los subsistemas:
+    - db:       True si el pool de BD está inicializado
+    - pei:      True si el daemon PEI está activo (afiliacion cargada)
+    - telegram: True si el bot está configurado
+    """
+    db_ok       = app_state.pool is not None
+    pei_ok      = app_state.afiliacion is not None
+    telegram_ok = app_state.bot is not None
+
+    status = "ok" if (db_ok and pei_ok) else "degraded"
+
+    return {
+        "status":   status,
+        "db":       db_ok,
+        "pei":      pei_ok,
+        "telegram": telegram_ok,
+    }
 
 
 # ------------------------------------------------------------------
