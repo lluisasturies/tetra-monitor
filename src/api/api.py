@@ -136,6 +136,37 @@ def _require_grupos():
         raise HTTPException(status_code=503, detail="Servicio no disponible aún")
 
 
+def _get_db_metrics() -> dict:
+    """
+    Consulta métricas básicas de la BD para el healthcheck.
+    Devuelve un dict con calls_today y last_call_at.
+    Nunca lanza excepción — en caso de error devuelve valores nulos.
+    """
+    if app_state.llamadas is None:
+        return {"calls_today": None, "last_call_at": None}
+    try:
+        from psycopg2.extras import RealDictCursor
+        conn = app_state.pool.getconn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS total FROM llamadas WHERE timestamp >= CURRENT_DATE"
+                )
+                calls_today = cur.fetchone()["total"]
+
+                cur.execute(
+                    "SELECT MAX(timestamp) AS last_ts FROM llamadas"
+                )
+                last_ts = cur.fetchone()["last_ts"]
+                last_call_at = last_ts.isoformat() if last_ts else None
+        finally:
+            app_state.pool.putconn(conn)
+        return {"calls_today": calls_today, "last_call_at": last_call_at}
+    except Exception as e:
+        logger.warning(f"[health] No se pudieron obtener métricas de BD: {e}")
+        return {"calls_today": None, "last_call_at": None}
+
+
 # ------------------------------------------------------------------
 # JWT
 # ------------------------------------------------------------------
@@ -202,22 +233,27 @@ class CarpetaUpsert(BaseModel):
 @limiter.limit("30/minute")
 def health(request: Request):
     """
-    Healthcheck público. Devuelve el estado real de los subsistemas:
-    - db:       True si el pool de BD está inicializado
-    - pei:      True si el daemon PEI está activo (afiliacion cargada)
-    - telegram: True si el bot está configurado
+    Healthcheck público. Devuelve:
+    - status:       'ok' si BD y PEI están activos, 'degraded' si no
+    - db:           True si el pool de BD está inicializado
+    - pei:          True si el daemon PEI está activo (afiliacion cargada)
+    - telegram:     True si el bot está configurado
+    - calls_today:  Número de llamadas guardadas hoy (null si BD no disponible)
+    - last_call_at: Timestamp ISO de la última llamada (null si no hay ninguna)
     """
     db_ok       = app_state.pool is not None
     pei_ok      = app_state.afiliacion is not None
     telegram_ok = app_state.bot is not None
-
-    status = "ok" if (db_ok and pei_ok) else "degraded"
+    status      = "ok" if (db_ok and pei_ok) else "degraded"
+    metrics     = _get_db_metrics()
 
     return {
-        "status":   status,
-        "db":       db_ok,
-        "pei":      pei_ok,
-        "telegram": telegram_ok,
+        "status":       status,
+        "db":           db_ok,
+        "pei":          pei_ok,
+        "telegram":     telegram_ok,
+        "calls_today":  metrics["calls_today"],
+        "last_call_at": metrics["last_call_at"],
     }
 
 
