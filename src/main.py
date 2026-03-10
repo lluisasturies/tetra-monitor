@@ -29,9 +29,6 @@ print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░�
 print("2026 © Lluis de la Rubia / LluisAsturies")
 print()
 
-# ---------------------------------------------------------------------------
-# Rutas del proyecto
-# ---------------------------------------------------------------------------
 PROJECT_ROOT    = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CONFIG_PATH     = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 KEYWORDS_PATH   = os.path.join(PROJECT_ROOT, "config", "keywords.yaml")
@@ -47,12 +44,7 @@ def _is_hardware_error(msg: str) -> bool:
     ])
 
 
-# ---------------------------------------------------------------------------
-# Carga y validación de configuración
-# ---------------------------------------------------------------------------
-
 def _load_config() -> dict:
-    """Lee config.yaml y aplica el nivel de log. Sale con error si falla."""
     try:
         with open(CONFIG_PATH, "r") as f:
             cfg = yaml.safe_load(f)
@@ -63,7 +55,6 @@ def _load_config() -> dict:
     except yaml.YAMLError as e:
         logger.critical(f"Error parseando config.yaml: {e}")
         sys.exit(1)
-
     set_level(cfg.get("logging", {}).get("level", "INFO"))
     return cfg
 
@@ -71,33 +62,22 @@ def _load_config() -> dict:
 def _validate_env(cfg: dict) -> dict:
     telegram_enabled = cfg["telegram"].get("enabled", True)
     errors = []
-
-    if not os.getenv("DB_USER"):
-        errors.append("DB_USER")
-    if not os.getenv("DB_PASSWORD"):
-        errors.append("DB_PASSWORD")
-    if not os.getenv("JWT_SECRET"):
-        errors.append("JWT_SECRET")
-    if not os.getenv("API_USER"):
-        errors.append("API_USER")
-
+    if not os.getenv("DB_USER"):          errors.append("DB_USER")
+    if not os.getenv("DB_PASSWORD"):      errors.append("DB_PASSWORD")
+    if not os.getenv("JWT_SECRET"):       errors.append("JWT_SECRET")
+    if not os.getenv("API_USER"):         errors.append("API_USER")
     if not os.getenv("API_PASSWORD_HASH"):
         if os.getenv("API_PASSWORD"):
             logger.critical("API_PASSWORD ya no se usa — ejecuta 'make set-password' para migrar a API_PASSWORD_HASH")
         else:
             errors.append("API_PASSWORD_HASH")
-
     if telegram_enabled:
-        if not os.getenv("TELEGRAM_TOKEN"):
-            errors.append("TELEGRAM_TOKEN")
-        if not os.getenv("TELEGRAM_CHAT_ID"):
-            errors.append("TELEGRAM_CHAT_ID")
-
+        if not os.getenv("TELEGRAM_TOKEN"):   errors.append("TELEGRAM_TOKEN")
+        if not os.getenv("TELEGRAM_CHAT_ID"): errors.append("TELEGRAM_CHAT_ID")
     if errors:
         for var in errors:
             logger.critical(f"Variable de entorno obligatoria no definida: {var}")
         sys.exit(1)
-
     return {
         "db_user":          os.getenv("DB_USER", ""),
         "db_password":      os.getenv("DB_PASSWORD", ""),
@@ -105,10 +85,6 @@ def _validate_env(cfg: dict) -> dict:
         "telegram_chat_id": os.getenv("TELEGRAM_CHAT_ID", ""),
     }
 
-
-# ---------------------------------------------------------------------------
-# Inicialización de subsistemas
-# ---------------------------------------------------------------------------
 
 def _init_db(cfg: dict, env: dict) -> tuple[DBPool, LlamadasDB, GruposDB]:
     pool = DBPool(
@@ -120,11 +96,9 @@ def _init_db(cfg: dict, env: dict) -> tuple[DBPool, LlamadasDB, GruposDB]:
     )
     llamadas_db = LlamadasDB(pool)
     grupos_db   = GruposDB(pool)
-
     app_state.pool     = pool
     app_state.llamadas = llamadas_db
     app_state.grupos   = grupos_db
-
     grupos_db.seed_from_yaml(GRUPOS_PATH)
     return pool, llamadas_db, grupos_db
 
@@ -156,24 +130,15 @@ def _init_audio(cfg: dict, audio_output_dir: str) -> tuple[AudioBuffer, STTProce
             sys.exit(0)
         logger.critical(f"No se pudo inicializar AudioBuffer: {e}")
         sys.exit(1)
-
-    stt = STTProcessor(
-        model_name=cfg["stt"]["model"],
-        language=cfg["stt"]["language"],
-    )
-    kf = KeywordFilter(KEYWORDS_PATH)
+    stt = STTProcessor(model_name=cfg["stt"]["model"], language=cfg["stt"]["language"])
+    kf  = KeywordFilter(KEYWORDS_PATH)
     app_state.keyword_filter = kf
     return audio_buffer, stt, kf
 
 
 def _init_pei(
-    cfg: dict,
-    audio_buffer: AudioBuffer,
-    stt: STTProcessor,
-    kf: KeywordFilter,
-    llamadas_db: LlamadasDB,
-    afiliacion: AfiliacionConfig,
-    bot: TelegramBot,
+    cfg: dict, audio_buffer: AudioBuffer, stt: STTProcessor, kf: KeywordFilter,
+    llamadas_db: LlamadasDB, afiliacion: AfiliacionConfig, bot: TelegramBot,
     audio_output_dir: str,
 ) -> PEIDaemon:
     return PEIDaemon(
@@ -191,6 +156,8 @@ def _init_pei(
         recording_enabled=cfg["audio"].get("recording_enabled", True),
         processing_enabled=cfg["pei"].get("processing_enabled", True),
         save_all_calls=cfg["database"].get("save_all_calls", False),
+        watchdog_timeout=cfg["pei"].get("watchdog_timeout", 60),
+        max_recording_seconds=cfg["audio"].get("max_recording_seconds", 120),
     )
 
 
@@ -200,10 +167,8 @@ def _init_api(cfg: dict) -> threading.Thread:
     except RuntimeError as e:
         logger.critical(f"Error al inicializar la API: {e}")
         sys.exit(1)
-
     def _run():
         uvicorn.run(app, host=cfg["api"]["host"], port=cfg["api"]["port"], log_level="warning")
-
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
     logger.info(f"API arrancada en {cfg['api']['host']}:{cfg['api']['port']}")
@@ -222,14 +187,9 @@ def _init_streaming(cfg: dict) -> object | None:
     return streamer
 
 
-# ---------------------------------------------------------------------------
-# Punto de entrada
-# ---------------------------------------------------------------------------
-
 def main():
     cfg = _load_config()
     env = _validate_env(cfg)
-
     audio_output_dir = os.path.join(PROJECT_ROOT, cfg["audio"].get("output_dir", "data/audio"))
 
     afiliacion = AfiliacionConfig(AFILIACION_PATH)
@@ -246,16 +206,19 @@ def main():
     processing_enabled = cfg["pei"].get("processing_enabled", True)
     telegram_enabled   = cfg["telegram"].get("enabled", True)
     save_all_calls     = cfg["database"].get("save_all_calls", False)
+    watchdog_timeout   = cfg["pei"].get("watchdog_timeout", 60)
+    max_rec_seconds    = cfg["audio"].get("max_recording_seconds", 120)
 
     logger.info(f"Grabación de audio       : {'ACTIVADA'  if recording_enabled  else 'DESACTIVADA'}")
     logger.info(f"Procesado PEI            : {'ACTIVADO'  if processing_enabled else 'DESACTIVADO'}")
     logger.info(f"Notificaciones Telegram  : {'ACTIVADAS' if telegram_enabled   else 'DESACTIVADAS'}")
     logger.info(f"Streaming                : {'ACTIVADO'  if streaming_enabled  else 'DESACTIVADO'}")
     logger.info(f"Guardado en BD           : {'TODAS las llamadas' if save_all_calls else 'Solo llamadas con keyword'}")
+    logger.info(f"Watchdog PEI             : {watchdog_timeout}s (0=desactivado)")
+    logger.info(f"Límite grabación        : {max_rec_seconds}s (0=desactivado)")
 
     _init_api(cfg)
     streamer = _init_streaming(cfg)
-
     bot.notificar_startup()
 
     def _signal_handler(sig, frame):

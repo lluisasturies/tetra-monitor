@@ -8,6 +8,7 @@ pei:
   port: "/dev/ttyUSB0"
   baudrate: 9600
   processing_enabled: true   # false → ignora eventos PEI (no graba ni transcribe)
+  watchdog_timeout: 60       # segundos sin eventos antes de reconectar (0 = desactivado)
 
 audio:
   device_index: 1
@@ -17,6 +18,7 @@ audio:
   output_dir: "data/audio"
   retention_days: 7
   recording_enabled: true    # false → no guarda ficheros de audio en disco
+  max_recording_seconds: 120 # corte automático si PTT_END no llega (0 = desactivado)
 
 streaming:
   enabled: true
