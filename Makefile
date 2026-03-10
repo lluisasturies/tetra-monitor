@@ -9,7 +9,8 @@ SERVICE_DEST  := /etc/systemd/system/$(SERVICE_NAME).service
 CURRENT_USER  := $(shell logname 2>/dev/null || echo $$SUDO_USER || echo $$USER)
 
 .PHONY: help setup setup-https set-password start stop restart logs logs-file \
-        install-service uninstall-service update status reload-grupos backup-db
+        install-service uninstall-service update status reload-grupos backup-db \
+        test lint
 
 help:
 	@echo ""
@@ -29,6 +30,8 @@ help:
 	@echo "  make update             git pull + reinicia el servicio si está activo"
 	@echo "  make reload-grupos      Recarga el catálogo desde config/grupos.yaml"
 	@echo "  make backup-db          Volcado de la BD en data/backups/"
+	@echo "  make test               Ejecuta todos los tests con pytest"
+	@echo "  make lint               Comprueba el estilo con ruff"
 	@echo ""
 
 setup:
@@ -84,3 +87,9 @@ reload-grupos:
 
 backup-db:
 	bash scripts/backup_db.sh
+
+test:
+	$(PROJECT_ROOT)/venv/bin/pytest tests/ -v
+
+lint:
+	$(PROJECT_ROOT)/venv/bin/ruff check src/ tests/
