@@ -37,7 +37,7 @@ CORS_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()] or ["http:
 
 
 # ------------------------------------------------------------------
-# Startup autónomo — solo actúa si main.py no ha inicializado el estado
+# Startup autónomo
 # ------------------------------------------------------------------
 
 def _init_standalone():
@@ -135,13 +135,12 @@ def _require_grupos():
     if app_state.grupos is None:
         raise HTTPException(status_code=503, detail="Servicio no disponible aún")
 
+def _require_keywords():
+    if app_state.keyword_filter is None:
+        raise HTTPException(status_code=503, detail="Servicio no disponible aún")
+
 
 def _get_db_metrics() -> dict:
-    """
-    Consulta métricas básicas de la BD para el healthcheck.
-    Devuelve un dict con calls_today y last_call_at.
-    Nunca lanza excepción — en caso de error devuelve valores nulos.
-    """
     if app_state.llamadas is None:
         return {"calls_today": None, "last_call_at": None}
     try:
@@ -153,10 +152,7 @@ def _get_db_metrics() -> dict:
                     "SELECT COUNT(*) AS total FROM llamadas WHERE timestamp >= CURRENT_DATE"
                 )
                 calls_today = cur.fetchone()["total"]
-
-                cur.execute(
-                    "SELECT MAX(timestamp) AS last_ts FROM llamadas"
-                )
+                cur.execute("SELECT MAX(timestamp) AS last_ts FROM llamadas")
                 last_ts = cur.fetchone()["last_ts"]
                 last_call_at = last_ts.isoformat() if last_ts else None
         finally:
@@ -224,6 +220,9 @@ class CarpetaUpsert(BaseModel):
     orden: int = 0
     grupos: list[CarpetaGrupoEntry] = []
 
+class KeywordAdd(BaseModel):
+    keyword: str
+
 
 # ------------------------------------------------------------------
 # Health
@@ -232,17 +231,6 @@ class CarpetaUpsert(BaseModel):
 @app.get("/health")
 @limiter.limit("30/minute")
 def health(request: Request):
-    """
-    Healthcheck público. Devuelve:
-    - status:           'ok' si BD, PEI y radio están activos; 'degraded' si no
-    - db:               True si el pool de BD está inicializado
-    - pei:              True si el daemon PEI está inicializado (AfiliacionConfig cargada)
-    - radio:            True si el PEI tiene conexión activa con la radio física
-    - telegram:         True si el bot está configurado
-    - streaming:        True si el streamer está corriendo (informativo, no afecta a status)
-    - calls_today:      Número de llamadas guardadas hoy (null si BD no disponible)
-    - last_call_at:     Timestamp ISO de la última llamada (null si no hay ninguna)
-    """
     db_ok       = app_state.pool is not None
     pei_ok      = app_state.afiliacion is not None
     radio_ok    = app_state.radio_connected
@@ -348,7 +336,44 @@ def llamada_detalle(request: Request, llamada_id: int):
 
 
 # ------------------------------------------------------------------
-# Afiliación (GSSI y scan list activos en el radio)
+# Keywords
+# ------------------------------------------------------------------
+
+@app.get("/keywords", dependencies=[Depends(verify_token)])
+@limiter.limit("60/minute")
+def listar_keywords(request: Request):
+    """Devuelve la lista actual de keywords activas."""
+    _require_keywords()
+    return {"keywords": app_state.keyword_filter.keywords}
+
+
+@app.post("/keywords", dependencies=[Depends(verify_token)])
+@limiter.limit("30/minute")
+def añadir_keyword(request: Request, body: KeywordAdd):
+    """Añade una keyword. Si ya existe devuelve 409."""
+    _require_keywords()
+    kw = body.keyword.strip()
+    if not kw:
+        raise HTTPException(status_code=422, detail="La keyword no puede estar vacía")
+    added = app_state.keyword_filter.add(kw)
+    if not added:
+        raise HTTPException(status_code=409, detail=f"La keyword '{kw.lower()}' ya existe")
+    return {"status": "ok", "keywords": app_state.keyword_filter.keywords}
+
+
+@app.delete("/keywords/{keyword}", dependencies=[Depends(verify_token)])
+@limiter.limit("30/minute")
+def eliminar_keyword(request: Request, keyword: str):
+    """Elimina una keyword. Si no existe devuelve 404."""
+    _require_keywords()
+    removed = app_state.keyword_filter.remove(keyword)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"Keyword '{keyword.lower()}' no encontrada")
+    return {"status": "ok", "keywords": app_state.keyword_filter.keywords}
+
+
+# ------------------------------------------------------------------
+# Afiliación
 # ------------------------------------------------------------------
 
 @app.get("/afiliacion", dependencies=[Depends(verify_token)])
@@ -384,7 +409,7 @@ def update_scanlist(request: Request, update: ScanListUpdate):
 
 
 # ------------------------------------------------------------------
-# Grupos (catálogo GSSI → nombre)
+# Grupos
 # ------------------------------------------------------------------
 
 @app.get("/groups", dependencies=[Depends(verify_token)])
@@ -429,7 +454,6 @@ def upsert_grupo(request: Request, body: GrupoUpsert):
 @app.get("/folders", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def listar_carpetas(request: Request):
-    """Lista todas las carpetas con sus grupos anidados, ordenadas por 'orden'."""
     _require_grupos()
     return app_state.grupos.listar_carpetas()
 
@@ -437,7 +461,6 @@ def listar_carpetas(request: Request):
 @app.get("/folders/{carpeta_id}", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def detalle_carpeta(request: Request, carpeta_id: int):
-    """Detalle de una carpeta con sus grupos."""
     _require_grupos()
     carpetas = app_state.grupos.listar_carpetas()
     carpeta  = next((c for c in carpetas if c["id"] == carpeta_id), None)
@@ -449,9 +472,6 @@ def detalle_carpeta(request: Request, carpeta_id: int):
 @app.post("/folders", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
 def upsert_carpeta(request: Request, body: CarpetaUpsert):
-    """
-    Crea o actualiza una carpeta (upsert por nombre) y reemplaza sus grupos.
-    """
     _require_grupos()
     carpeta_id = app_state.grupos.upsert_carpeta(
         nombre=body.nombre,
@@ -473,7 +493,6 @@ def upsert_carpeta(request: Request, body: CarpetaUpsert):
 @app.put("/folders/{carpeta_id}/groups", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
 def actualizar_grupos_carpeta(request: Request, carpeta_id: int, body: list[CarpetaGrupoEntry]):
-    """Reemplaza completamente los grupos de una carpeta existente."""
     _require_grupos()
     carpetas = app_state.grupos.listar_carpetas()
     if not any(c["id"] == carpeta_id for c in carpetas):
@@ -491,7 +510,6 @@ def actualizar_grupos_carpeta(request: Request, carpeta_id: int, body: list[Carp
 @app.delete("/folders/{carpeta_id}", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
 def borrar_carpeta(request: Request, carpeta_id: int):
-    """Elimina una carpeta. Los grupos NO se eliminan, solo se desvinculan."""
     _require_grupos()
     ok = app_state.grupos.borrar_carpeta(carpeta_id)
     if not ok:

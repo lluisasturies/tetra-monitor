@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from db.grupos import GruposDB
     from integrations.telegram_bot import TelegramBot
     from core.afiliacion import AfiliacionConfig
+    from filters.keyword_filter import KeywordFilter
 
 
 class AppState:
@@ -16,6 +17,7 @@ class AppState:
     grupos: GruposDB | None = None
     bot: TelegramBot | None = None
     afiliacion: AfiliacionConfig | None = None
+    keyword_filter: KeywordFilter | None = None
     refresh_tokens: set[str] = set()  # tokens válidos en memoria
     radio_connected: bool = False     # True si el PEI tiene conexión activa con la radio
     streaming_active: bool = False    # True si el streamer está corriendo

@@ -69,10 +69,6 @@ def _load_config() -> dict:
 
 
 def _validate_env(cfg: dict) -> dict:
-    """
-    Comprueba que todas las variables de entorno obligatorias estén definidas.
-    Devuelve un dict con los valores ya leídos. Sale con error si falta alguna.
-    """
     telegram_enabled = cfg["telegram"].get("enabled", True)
     errors = []
 
@@ -115,7 +111,6 @@ def _validate_env(cfg: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _init_db(cfg: dict, env: dict) -> tuple[DBPool, LlamadasDB, GruposDB]:
-    """Abre el pool de conexiones y registra los repositorios en app_state."""
     pool = DBPool(
         host=cfg["database"]["host"],
         port=cfg["database"]["port"],
@@ -135,7 +130,6 @@ def _init_db(cfg: dict, env: dict) -> tuple[DBPool, LlamadasDB, GruposDB]:
 
 
 def _init_bot(cfg: dict, env: dict) -> TelegramBot:
-    """Crea el bot de Telegram y lo registra en app_state."""
     bot = TelegramBot(
         token=env["telegram_token"],
         chat_id=env["telegram_chat_id"],
@@ -147,7 +141,6 @@ def _init_bot(cfg: dict, env: dict) -> TelegramBot:
 
 
 def _init_audio(cfg: dict, audio_output_dir: str) -> tuple[AudioBuffer, STTProcessor, KeywordFilter]:
-    """Inicializa el buffer de audio, el procesador STT y el filtro de keywords."""
     try:
         audio_buffer = AudioBuffer(
             device_index=cfg["audio"].get("device_index", None),
@@ -169,6 +162,7 @@ def _init_audio(cfg: dict, audio_output_dir: str) -> tuple[AudioBuffer, STTProce
         language=cfg["stt"]["language"],
     )
     kf = KeywordFilter(KEYWORDS_PATH)
+    app_state.keyword_filter = kf
     return audio_buffer, stt, kf
 
 
@@ -182,7 +176,6 @@ def _init_pei(
     bot: TelegramBot,
     audio_output_dir: str,
 ) -> PEIDaemon:
-    """Construye el PEIDaemon con todos sus colaboradores."""
     return PEIDaemon(
         motorola_pei_cls=MotorolaPEI,
         audio_buffer=audio_buffer,
@@ -202,7 +195,6 @@ def _init_pei(
 
 
 def _init_api(cfg: dict) -> threading.Thread:
-    """Importa la app FastAPI y la arranca en un hilo daemon."""
     try:
         from api.api import app
     except RuntimeError as e:
@@ -219,7 +211,6 @@ def _init_api(cfg: dict) -> threading.Thread:
 
 
 def _init_streaming(cfg: dict) -> object | None:
-    """Crea el streamer si está habilitado en config, actualiza app_state y devuelve el objeto."""
     stream_cfg = cfg.get("streaming", {})
     if not stream_cfg.get("enabled", False):
         app_state.streaming_active = False
@@ -236,24 +227,20 @@ def _init_streaming(cfg: dict) -> object | None:
 # ---------------------------------------------------------------------------
 
 def main():
-    # 1. Configuración y entorno
     cfg = _load_config()
     env = _validate_env(cfg)
 
     audio_output_dir = os.path.join(PROJECT_ROOT, cfg["audio"].get("output_dir", "data/audio"))
 
-    # 2. Afiliación — se inicializa sin bot todavía (el bot se crea en el paso siguiente)
     afiliacion = AfiliacionConfig(AFILIACION_PATH)
     app_state.afiliacion = afiliacion
 
-    # 3. Subsistemas
     pool, llamadas_db, grupos_db = _init_db(cfg, env)
     bot                          = _init_bot(cfg, env)
     afiliacion.set_bot(bot)
     audio_buffer, stt, kf        = _init_audio(cfg, audio_output_dir)
     pei_daemon                   = _init_pei(cfg, audio_buffer, stt, kf, llamadas_db, afiliacion, bot, audio_output_dir)
 
-    # 4. Resumen de flags activos
     streaming_enabled  = cfg.get("streaming", {}).get("enabled", False)
     recording_enabled  = cfg["audio"].get("recording_enabled", True)
     processing_enabled = cfg["pei"].get("processing_enabled", True)
@@ -266,14 +253,11 @@ def main():
     logger.info(f"Streaming                : {'ACTIVADO'  if streaming_enabled  else 'DESACTIVADO'}")
     logger.info(f"Guardado en BD           : {'TODAS las llamadas' if save_all_calls else 'Solo llamadas con keyword'}")
 
-    # 5. API y streaming
     _init_api(cfg)
     streamer = _init_streaming(cfg)
 
-    # 6. Notificar arranque
     bot.notificar_startup()
 
-    # 7. Señales de sistema
     def _signal_handler(sig, frame):
         logger.info("Señal de interrupción recibida, cerrando aplicación...")
         bot.notificar_shutdown()
@@ -285,7 +269,6 @@ def main():
     signal.signal(signal.SIGINT,  _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
 
-    # 8. Bucle principal
     logger.info("Iniciando escucha PEI con streaming...")
     try:
         pei_daemon.escuchar_pei(streamer)

@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from core.logger import logger
 
+
 class KeywordFilter:
     def __init__(self, filepath: str = "config/keywords.yaml"):
         if not os.path.exists(filepath):
@@ -40,3 +41,40 @@ class KeywordFilter:
     def contiene_evento(self, texto: str) -> bool:
         texto = texto.lower()
         return any(k in texto for k in self.keywords)
+
+    def save(self):
+        """Persiste la lista actual de keywords en disco."""
+        try:
+            with open(self._filepath, "w") as f:
+                yaml.safe_dump({"keywords": self.keywords}, f, allow_unicode=True)
+            self._last_mtime = self._filepath.stat().st_mtime
+            logger.info(f"[KeywordFilter] keywords.yaml guardado con {len(self.keywords)} entradas")
+        except Exception as e:
+            logger.error(f"[KeywordFilter] Error guardando keywords.yaml: {e}")
+            raise
+
+    def add(self, keyword: str) -> bool:
+        """
+        Añade una keyword (normalizada a minúsculas) y persiste.
+        Devuelve True si se añadió, False si ya existía.
+        """
+        kw = keyword.strip().lower()
+        if kw in self.keywords:
+            return False
+        self.keywords.append(kw)
+        self.save()
+        logger.info(f"[KeywordFilter] Keyword añadida: '{kw}'")
+        return True
+
+    def remove(self, keyword: str) -> bool:
+        """
+        Elimina una keyword y persiste.
+        Devuelve True si se eliminó, False si no existía.
+        """
+        kw = keyword.strip().lower()
+        if kw not in self.keywords:
+            return False
+        self.keywords.remove(kw)
+        self.save()
+        logger.info(f"[KeywordFilter] Keyword eliminada: '{kw}'")
+        return True
