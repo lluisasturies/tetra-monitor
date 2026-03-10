@@ -38,9 +38,14 @@ class PEIDaemon:
         self._init_radio()
 
     def _set_radio_connected(self, connected: bool):
-        """Actualiza el estado de conexión en app_state y en el bot."""
+        """Actualiza el estado de conexión en app_state, notifica al bot si cambia."""
+        prev = app_state.radio_connected
         app_state.radio_connected = connected
         self.bot.radio_active = connected
+        if connected and not prev:
+            self.bot.notificar_radio_conectada()
+        elif not connected and prev:
+            self.bot.notificar_radio_desconectada()
 
     def _apply_afiliacion(self):
         logger.info(

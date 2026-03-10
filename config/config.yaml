@@ -40,4 +40,10 @@ api:
   port: 8000
 
 telegram:
-  enabled: true     # false → no envía alertas por Telegram
+  enabled: true     # false → desactiva Telegram completamente
+  alerts:
+    startup: true             # Notificar cuando la aplicación arranca
+    shutdown: true            # Notificar cuando la aplicación se cierra
+    radio_connected: true     # Notificar cuando la radio se conecta al PEI
+    radio_disconnected: true  # Notificar cuando la radio se desconecta
+    afiliacion_changed: true  # Notificar cambios de GSSI o scan list

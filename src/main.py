@@ -140,6 +140,7 @@ def _init_bot(cfg: dict, env: dict) -> TelegramBot:
         token=env["telegram_token"],
         chat_id=env["telegram_chat_id"],
         enabled=cfg["telegram"].get("enabled", True),
+        alerts=cfg["telegram"].get("alerts", {}),
     )
     app_state.bot = bot
     return bot
@@ -248,7 +249,7 @@ def main():
     # 3. Subsistemas
     pool, llamadas_db, grupos_db = _init_db(cfg, env)
     bot                          = _init_bot(cfg, env)
-    afiliacion.set_bot(bot)  # inyectar bot una vez disponible
+    afiliacion.set_bot(bot)
     audio_buffer, stt, kf        = _init_audio(cfg, audio_output_dir)
     pei_daemon                   = _init_pei(cfg, audio_buffer, stt, kf, llamadas_db, afiliacion, bot, audio_output_dir)
 
@@ -269,9 +270,13 @@ def main():
     _init_api(cfg)
     streamer = _init_streaming(cfg)
 
-    # 6. Señales de sistema
+    # 6. Notificar arranque
+    bot.notificar_startup()
+
+    # 7. Señales de sistema
     def _signal_handler(sig, frame):
         logger.info("Señal de interrupción recibida, cerrando aplicación...")
+        bot.notificar_shutdown()
         app_state.streaming_active = False
         pei_daemon.shutdown(streamer)
         pool.closeall()
@@ -280,7 +285,7 @@ def main():
     signal.signal(signal.SIGINT,  _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
 
-    # 7. Bucle principal
+    # 8. Bucle principal
     logger.info("Iniciando escucha PEI con streaming...")
     try:
         pei_daemon.escuchar_pei(streamer)
@@ -293,6 +298,7 @@ def main():
         sys.exit(1)
     except KeyboardInterrupt:
         logger.info("Interrupción por teclado recibida")
+        bot.notificar_shutdown()
         app_state.streaming_active = False
         pei_daemon.shutdown(streamer)
         pool.closeall()
