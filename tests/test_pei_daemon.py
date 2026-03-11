@@ -28,8 +28,8 @@ def reset_app_state():
 
 
 def _make_daemon(**kwargs) -> PEIDaemon:
-    """Construye un PEIDaemon con dependencias mockeadas. kwargs sobreescriben defaults."""
     bot = kwargs.pop("bot", mock.MagicMock())
+    email = kwargs.pop("email", mock.MagicMock())
     afiliacion = kwargs.pop("afiliacion", mock.MagicMock())
     afiliacion.gssi      = "36001"
     afiliacion.scan_list = "ListaScan1"
@@ -43,6 +43,7 @@ def _make_daemon(**kwargs) -> PEIDaemon:
         llamadas_db=mock.MagicMock(),
         afiliacion=afiliacion,
         bot=bot,
+        email=email,
         port="/dev/ttyUSB0",
         baudrate=9600,
         audio_output_dir="/tmp/audio_test",
@@ -50,12 +51,13 @@ def _make_daemon(**kwargs) -> PEIDaemon:
         recording_enabled=True,
         processing_enabled=True,
         save_all_calls=False,
-        watchdog_timeout=0,        # desactivado en tests para no arrancar hilos reales
-        max_recording_seconds=0,   # desactivado por defecto; tests especificos lo activan
+        watchdog_timeout=0,
+        max_recording_seconds=0,
     )
     defaults.update(kwargs)
     d = PEIDaemon(**defaults)
-    d.bot.reset_mock()  # limpiar llamadas del _init_radio
+    d.bot.reset_mock()
+    d.email.reset_mock()
     return d
 
 
@@ -65,28 +67,37 @@ def daemon() -> PEIDaemon:
 
 
 # ---------------------------------------------------------------------------
-# _set_radio_connected
+# _set_radio_connected — notificaciones via email, no telegram
 # ---------------------------------------------------------------------------
 
-def test_set_radio_connected_true_notifica_conectada(daemon):
+def test_set_radio_connected_true_notifica_email(daemon):
     app_state.radio_connected = False
     daemon._set_radio_connected(True)
-    daemon.bot.notificar_radio_conectada.assert_called_once()
-    daemon.bot.notificar_radio_desconectada.assert_not_called()
+    daemon.email.notificar_radio_conectada.assert_called_once()
+    daemon.email.notificar_radio_desconectada.assert_not_called()
+    # Telegram NO debe recibir notificaciones de sistema
+    daemon.bot.notificar_radio_conectada = mock.MagicMock()  # asegurar que no existe o no se llama
 
 
-def test_set_radio_connected_false_notifica_desconectada(daemon):
+def test_set_radio_connected_false_notifica_email(daemon):
     app_state.radio_connected = True
     daemon._set_radio_connected(False)
-    daemon.bot.notificar_radio_desconectada.assert_called_once()
-    daemon.bot.notificar_radio_conectada.assert_not_called()
+    daemon.email.notificar_radio_desconectada.assert_called_once()
+    daemon.email.notificar_radio_conectada.assert_not_called()
 
 
 def test_set_radio_connected_mismo_estado_no_notifica(daemon):
     app_state.radio_connected = True
     daemon._set_radio_connected(True)
-    daemon.bot.notificar_radio_conectada.assert_not_called()
-    daemon.bot.notificar_radio_desconectada.assert_not_called()
+    daemon.email.notificar_radio_conectada.assert_not_called()
+    daemon.email.notificar_radio_desconectada.assert_not_called()
+
+
+def test_set_radio_connected_sin_email_no_falla():
+    """Si email=None (no configurado), no debe lanzar excepción."""
+    d = _make_daemon(email=None)
+    app_state.radio_connected = False
+    d._set_radio_connected(True)  # no debe lanzar
 
 
 # ---------------------------------------------------------------------------
@@ -104,53 +115,41 @@ def test_watchdog_activado_arranca_hilo():
     d._start_watchdog()
     assert d._watchdog_thread is not None
     assert d._watchdog_thread.is_alive()
-    d._stop_event.set()  # detener el hilo
+    d._stop_event.set()
 
 
 def test_watchdog_solicita_reconexion_si_timeout():
-    """Si el ultimo evento fue hace mas tiempo que el timeout, debe pedir reconexion."""
     d = _make_daemon(watchdog_timeout=1)
-    d._last_event_time = time.monotonic() - 10  # simular inactividad
+    d._last_event_time = time.monotonic() - 10
     app_state.radio_connected = True
-
-    # Ejecutar una iteracion del loop del watchdog directamente
-    # (sin arrancar el hilo para no depender de timing)
     elapsed = time.monotonic() - d._last_event_time
     if elapsed > d.watchdog_timeout:
         d._reconnect_requested.set()
-
     assert d._reconnect_requested.is_set()
 
 
 def test_watchdog_no_solicita_reconexion_si_reciente():
     d = _make_daemon(watchdog_timeout=60)
-    d._last_event_time = time.monotonic()  # evento muy reciente
+    d._last_event_time = time.monotonic()
     app_state.radio_connected = True
-
     elapsed = time.monotonic() - d._last_event_time
     if elapsed > d.watchdog_timeout:
-        d._reconnect_requested.set()  # no deberia ejecutarse
-
+        d._reconnect_requested.set()
     assert not d._reconnect_requested.is_set()
 
 
 def test_watchdog_no_interfiere_si_radio_desconectada():
-    """Si la radio ya esta desconectada el watchdog no debe pedir reconexion."""
     d = _make_daemon(watchdog_timeout=1)
     d._last_event_time = time.monotonic() - 100
-    app_state.radio_connected = False  # ya reconectando
-
-    # Logica del watchdog: skip si radio_connected=False
+    app_state.radio_connected = False
     if app_state.radio_connected:
         elapsed = time.monotonic() - d._last_event_time
         if elapsed > d.watchdog_timeout:
             d._reconnect_requested.set()
-
     assert not d._reconnect_requested.is_set()
 
 
 def test_handle_event_actualiza_last_event_time(daemon):
-    """Cualquier evento procesado debe refrescar _last_event_time."""
     before = daemon._last_event_time
     time.sleep(0.01)
     daemon._handle_event(PEIEvent(type="PTT_START"))
@@ -158,12 +157,12 @@ def test_handle_event_actualiza_last_event_time(daemon):
 
 
 # ---------------------------------------------------------------------------
-# Limite de duracion de grabacion
+# Límite de duración de grabación
 # ---------------------------------------------------------------------------
 
 def test_recording_timeout_no_actua_si_desactivado():
     d = _make_daemon(max_recording_seconds=0)
-    d._recording_start_time = time.monotonic() - 9999  # simular grabacion muy larga
+    d._recording_start_time = time.monotonic() - 9999
     d._executor = mock.MagicMock()
     d._check_recording_timeout()
     d.audio_buffer.stop_recording.assert_not_called()
@@ -171,34 +170,31 @@ def test_recording_timeout_no_actua_si_desactivado():
 
 def test_recording_timeout_no_actua_si_no_grabando():
     d = _make_daemon(max_recording_seconds=30)
-    d._recording_start_time = None  # no hay grabacion activa
+    d._recording_start_time = None
     d._check_recording_timeout()
     d.audio_buffer.stop_recording.assert_not_called()
 
 
 def test_recording_timeout_corta_grabacion_larga():
     d = _make_daemon(max_recording_seconds=30)
-    d._recording_start_time = time.monotonic() - 60  # grabacion de 60s con limite de 30s
+    d._recording_start_time = time.monotonic() - 60
     d.audio_buffer.stop_recording.return_value = "/tmp/audio_test/timeout.flac"
     d._executor = mock.MagicMock()
     d._check_recording_timeout()
     d.audio_buffer.stop_recording.assert_called_once()
     d._executor.submit.assert_called_once()
-    assert d._recording_start_time is None  # debe resetearse
+    assert d._recording_start_time is None
 
 
 def test_recording_timeout_no_corta_grabacion_corta():
     d = _make_daemon(max_recording_seconds=120)
-    d._recording_start_time = time.monotonic() - 5  # grabacion de solo 5s
+    d._recording_start_time = time.monotonic() - 5
     d._executor = mock.MagicMock()
     d._check_recording_timeout()
     d.audio_buffer.stop_recording.assert_not_called()
 
 
-def test_ptt_start_registra_recording_start_time(daemon):
-    daemon._handle_event(PEIEvent(type="PTT_START"))
-    # Con max_recording_seconds=0 no se usa, pero _recording_start_time si se setea
-    # Reactivamos el limite para este test
+def test_ptt_start_registra_recording_start_time():
     d = _make_daemon(max_recording_seconds=60)
     before = time.monotonic()
     d._handle_event(PEIEvent(type="PTT_START"))
@@ -340,7 +336,7 @@ def test_process_audio_save_all_calls_con_keyword_guarda_y_alerta(daemon):
 
 def test_process_audio_error_stt_no_propaga(daemon):
     daemon.stt_processor.transcribe.side_effect = RuntimeError("STT falló")
-    daemon._process_audio("/tmp/audio.flac", grupo=36001, ssi=12345)  # no debe lanzar
+    daemon._process_audio("/tmp/audio.flac", grupo=36001, ssi=12345)
 
 
 # ---------------------------------------------------------------------------
@@ -372,4 +368,4 @@ def test_check_afiliacion_no_aplica_si_radio_none(daemon):
     daemon._last_afiliacion_check = 0.0
     daemon.afiliacion.reload_if_changed.return_value = True
     daemon.radio = None
-    daemon._check_afiliacion()  # no debe lanzar
+    daemon._check_afiliacion()

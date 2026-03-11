@@ -14,6 +14,7 @@ from audio.audio_buffer import AudioBuffer  # noqa: E402
 from core.stt_processor import STTProcessor  # noqa: E402
 from filters.keyword_filter import KeywordFilter  # noqa: E402
 from integrations.telegram_bot import TelegramBot  # noqa: E402
+from integrations.email_notifier import EmailNotifier  # noqa: E402
 from db.pool import DBPool  # noqa: E402
 from db.llamadas import LlamadasDB  # noqa: E402
 from db.grupos import GruposDB  # noqa: E402
@@ -61,6 +62,7 @@ def _load_config() -> dict:
 
 def _validate_env(cfg: dict) -> dict:
     telegram_enabled = cfg["telegram"].get("enabled", True)
+    email_enabled    = cfg.get("email", {}).get("enabled", False)
     errors = []
 
     if not os.getenv("DB_USER"):
@@ -73,7 +75,7 @@ def _validate_env(cfg: dict) -> dict:
         errors.append("API_USER")
     if not os.getenv("API_PASSWORD_HASH"):
         if os.getenv("API_PASSWORD"):
-            logger.critical("API_PASSWORD ya no se usa — ejecuta 'make set-password' para migrar a API_PASSWORD_HASH")
+            logger.critical("API_PASSWORD ya no se usa — ejecuta 'make set-password' para migrar")
         else:
             errors.append("API_PASSWORD_HASH")
     if telegram_enabled:
@@ -81,6 +83,11 @@ def _validate_env(cfg: dict) -> dict:
             errors.append("TELEGRAM_TOKEN")
         if not os.getenv("TELEGRAM_CHAT_ID"):
             errors.append("TELEGRAM_CHAT_ID")
+    if email_enabled:
+        if not os.getenv("EMAIL_USER"):
+            errors.append("EMAIL_USER")
+        if not os.getenv("EMAIL_PASSWORD"):
+            errors.append("EMAIL_PASSWORD")
 
     if errors:
         for var in errors:
@@ -92,6 +99,8 @@ def _validate_env(cfg: dict) -> dict:
         "db_password":      os.getenv("DB_PASSWORD", ""),
         "telegram_token":   os.getenv("TELEGRAM_TOKEN", ""),
         "telegram_chat_id": os.getenv("TELEGRAM_CHAT_ID", ""),
+        "email_user":       os.getenv("EMAIL_USER", ""),
+        "email_password":   os.getenv("EMAIL_PASSWORD", ""),
     }
 
 
@@ -123,6 +132,24 @@ def _init_bot(cfg: dict, env: dict) -> TelegramBot:
     return bot
 
 
+def _init_email(cfg: dict, env: dict) -> EmailNotifier:
+    email_cfg = cfg.get("email", {})
+    to_raw    = email_cfg.get("to", "")
+    to        = [t.strip() for t in to_raw.split(",") if t.strip()] if isinstance(to_raw, str) else to_raw
+    notifier = EmailNotifier(
+        smtp_host=email_cfg.get("smtp_host", "smtp.gmail.com"),
+        smtp_port=email_cfg.get("smtp_port", 587),
+        user=env["email_user"],
+        password=env["email_password"],
+        to=to,
+        use_tls=email_cfg.get("use_tls", True),
+        enabled=email_cfg.get("enabled", False),
+        alerts=email_cfg.get("alerts", {}),
+    )
+    app_state.email = notifier
+    return notifier
+
+
 def _init_audio(cfg: dict, audio_output_dir: str) -> tuple[AudioBuffer, STTProcessor, KeywordFilter]:
     try:
         audio_buffer = AudioBuffer(
@@ -148,7 +175,7 @@ def _init_audio(cfg: dict, audio_output_dir: str) -> tuple[AudioBuffer, STTProce
 def _init_pei(
     cfg: dict, audio_buffer: AudioBuffer, stt: STTProcessor, kf: KeywordFilter,
     llamadas_db: LlamadasDB, afiliacion: AfiliacionConfig, bot: TelegramBot,
-    audio_output_dir: str,
+    email: EmailNotifier, audio_output_dir: str,
 ) -> PEIDaemon:
     return PEIDaemon(
         motorola_pei_cls=MotorolaPEI,
@@ -158,6 +185,7 @@ def _init_pei(
         llamadas_db=llamadas_db,
         afiliacion=afiliacion,
         bot=bot,
+        email=email,
         port=cfg["pei"].get("port", ""),
         baudrate=cfg["pei"]["baudrate"],
         audio_output_dir=audio_output_dir,
@@ -208,33 +236,38 @@ def main():
 
     pool, llamadas_db, grupos_db = _init_db(cfg, env)
     bot                          = _init_bot(cfg, env)
+    email                        = _init_email(cfg, env)
     afiliacion.set_bot(bot)
     audio_buffer, stt, kf        = _init_audio(cfg, audio_output_dir)
-    pei_daemon                   = _init_pei(cfg, audio_buffer, stt, kf, llamadas_db, afiliacion, bot, audio_output_dir)
+    pei_daemon                   = _init_pei(
+        cfg, audio_buffer, stt, kf, llamadas_db, afiliacion, bot, email, audio_output_dir
+    )
 
     streaming_enabled  = cfg.get("streaming", {}).get("enabled", False)
     recording_enabled  = cfg["audio"].get("recording_enabled", True)
     processing_enabled = cfg["pei"].get("processing_enabled", True)
     telegram_enabled   = cfg["telegram"].get("enabled", True)
+    email_enabled      = cfg.get("email", {}).get("enabled", False)
     save_all_calls     = cfg["database"].get("save_all_calls", False)
     watchdog_timeout   = cfg["pei"].get("watchdog_timeout", 60)
     max_rec_seconds    = cfg["audio"].get("max_recording_seconds", 120)
 
     logger.info(f"Grabación de audio       : {'ACTIVADA'  if recording_enabled  else 'DESACTIVADA'}")
     logger.info(f"Procesado PEI            : {'ACTIVADO'  if processing_enabled else 'DESACTIVADO'}")
-    logger.info(f"Notificaciones Telegram  : {'ACTIVADAS' if telegram_enabled   else 'DESACTIVADAS'}")
+    logger.info(f"Telegram                 : {'ACTIVADO'  if telegram_enabled   else 'DESACTIVADO'}")
+    logger.info(f"Email                    : {'ACTIVADO'  if email_enabled      else 'DESACTIVADO'}")
     logger.info(f"Streaming                : {'ACTIVADO'  if streaming_enabled  else 'DESACTIVADO'}")
-    logger.info(f"Guardado en BD           : {'TODAS las llamadas' if save_all_calls else 'Solo llamadas con keyword'}")
+    logger.info(f"Guardado en BD           : {'TODAS las llamadas' if save_all_calls else 'Solo con keyword'}")
     logger.info(f"Watchdog PEI             : {watchdog_timeout}s (0=desactivado)")
     logger.info(f"Límite grabación         : {max_rec_seconds}s (0=desactivado)")
 
     _init_api(cfg)
     streamer = _init_streaming(cfg)
-    bot.notificar_startup()
+    email.notificar_startup()
 
     def _signal_handler(sig, frame):
         logger.info("Señal de interrupción recibida, cerrando aplicación...")
-        bot.notificar_shutdown()
+        email.notificar_shutdown()
         app_state.streaming_active = False
         pei_daemon.shutdown(streamer)
         pool.closeall()
@@ -255,7 +288,7 @@ def main():
         sys.exit(1)
     except KeyboardInterrupt:
         logger.info("Interrupción por teclado recibida")
-        bot.notificar_shutdown()
+        email.notificar_shutdown()
         app_state.streaming_active = False
         pei_daemon.shutdown(streamer)
         pool.closeall()

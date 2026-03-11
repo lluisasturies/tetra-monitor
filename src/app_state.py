@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from db.llamadas import LlamadasDB
     from db.grupos import GruposDB
     from integrations.telegram_bot import TelegramBot
+    from integrations.email_notifier import EmailNotifier
     from core.afiliacion import AfiliacionConfig
     from filters.keyword_filter import KeywordFilter
 
@@ -16,6 +17,7 @@ class AppState:
     llamadas: LlamadasDB | None = None
     grupos: GruposDB | None = None
     bot: TelegramBot | None = None
+    email: EmailNotifier | None = None
     afiliacion: AfiliacionConfig | None = None
     keyword_filter: KeywordFilter | None = None
     refresh_tokens: set[str] = set()  # tokens válidos en memoria

@@ -45,8 +45,17 @@ telegram:
   enabled: true     # false → desactiva Telegram completamente
   alerts:
     relevant_calls: true          # Notificar llamadas con keyword detectada
-    startup: true                 # Notificar cuando la aplicación arranca
-    shutdown: true                # Notificar cuando la aplicación se cierra
-    radio_connected: true         # Notificar cuando la radio se conecta al PEI
-    radio_disconnected: true      # Notificar cuando la radio se desconecta
     afiliacion_changed: true      # Notificar cambios de GSSI o scan list
+
+email:
+  enabled: true                   # false → desactiva email completamente
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  use_tls: true                   # STARTTLS (recomendado). false → sin cifrado
+  # Credenciales en .env: EMAIL_USER y EMAIL_PASSWORD
+  to: "admin@example.com"         # Destinatario (puede ser lista separada por comas)
+  alerts:
+    startup: true                 # Email cuando la aplicación arranca
+    shutdown: true                # Email cuando la aplicación se cierra
+    radio_disconnected: true      # Email cuando la radio se desconecta
+    # radio_connected: false      # Descomentado si quieres también reconexiones
