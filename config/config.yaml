@@ -43,7 +43,7 @@ telegram:
     afiliacion_changed: true      # Notificar cambios de GSSI o scan list
 
 email:
-  enabled: true                   # false → desactiva email completamente
+  enabled: false                  # false → desactiva email completamente
   smtp_host: "smtp.gmail.com"
   smtp_port: 587
   use_tls: true                   # STARTTLS (recomendado). false → sin cifrado
