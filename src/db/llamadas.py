@@ -3,6 +3,12 @@ from psycopg2.extras import RealDictCursor
 from core.logger import logger
 from db.pool import DBPool
 
+_BASE_SELECT = """
+    SELECT l.*, g.nombre AS grupo_nombre
+    FROM llamadas l
+    LEFT JOIN grupos g ON g.gssi = l.grupo
+"""
+
 
 class LlamadasDB:
     def __init__(self, pool: DBPool):
@@ -13,10 +19,13 @@ class LlamadasDB:
         try:
             conn.autocommit = False
             with conn.cursor() as cur:
-                cur.execute('''
+                cur.execute(
+                    """
                     INSERT INTO llamadas (timestamp, grupo, ssi, texto, ruta_audio)
                     VALUES (%s, %s, %s, %s, %s)
-                ''', (datetime.now(), grupo, ssi, texto, ruta_audio))
+                    """,
+                    (datetime.now(), grupo, ssi, texto, ruta_audio),
+                )
             conn.commit()
             return True
         except Exception as e:
@@ -32,14 +41,8 @@ class LlamadasDB:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    '''
-                    SELECT l.*, g.nombre AS grupo_nombre
-                    FROM llamadas l
-                    LEFT JOIN grupos g ON g.gssi = l.grupo
-                    ORDER BY l.timestamp DESC
-                    LIMIT %s
-                    ''',
-                    (limit,)
+                    _BASE_SELECT + "ORDER BY l.timestamp DESC LIMIT %s",
+                    (limit,),
                 )
                 return cur.fetchall()
         except Exception as e:
@@ -59,9 +62,9 @@ class LlamadasDB:
         """
         Listado con paginación y filtros opcionales.
         Devuelve (filas, total) donde total es el número de resultados sin paginar.
-        Incluye grupo_nombre via LEFT JOIN a la tabla grupos.
+        Usa SQL parametrizado para todas las condiciones del WHERE.
         """
-        conditions = []
+        conditions: list[str] = []
         params: list = []
 
         if gssi is not None:
@@ -74,26 +77,22 @@ class LlamadasDB:
             conditions.append("l.texto ILIKE %s")
             params.append(f"%{texto}%")
 
-        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        # La cláusula WHERE se construye solo con literales hardcodeados (%s),
+        # nunca con valores de usuario interpolados directamente en el string SQL.
+        where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
         conn = self.pool.getconn()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                # Total de resultados (sin paginar)
-                cur.execute(f"SELECT COUNT(*) FROM llamadas l {where}", params)
+                cur.execute(
+                    f"SELECT COUNT(*) FROM llamadas l {where_clause}",  # noqa: S608
+                    params,
+                )
                 total = cur.fetchone()["count"]
 
-                # Página solicitada con nombre de grupo
                 cur.execute(
-                    f"""
-                    SELECT l.*, g.nombre AS grupo_nombre
-                    FROM llamadas l
-                    LEFT JOIN grupos g ON g.gssi = l.grupo
-                    {where}
-                    ORDER BY l.timestamp DESC
-                    LIMIT %s OFFSET %s
-                    """,
-                    params + [limit, offset]
+                    f"{_BASE_SELECT} {where_clause} ORDER BY l.timestamp DESC LIMIT %s OFFSET %s",  # noqa: S608
+                    params + [limit, offset],
                 )
                 rows = cur.fetchall()
             return rows, total
@@ -108,13 +107,8 @@ class LlamadasDB:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    '''
-                    SELECT l.*, g.nombre AS grupo_nombre
-                    FROM llamadas l
-                    LEFT JOIN grupos g ON g.gssi = l.grupo
-                    WHERE l.id = %s
-                    ''',
-                    (llamada_id,)
+                    _BASE_SELECT + "WHERE l.id = %s",
+                    (llamada_id,),
                 )
                 row = cur.fetchone()
                 return dict(row) if row else None
