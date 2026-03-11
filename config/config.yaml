@@ -1,9 +1,3 @@
-logging:
-  level: INFO       # INFO, WARNING, ERROR, CRITICAL
-  console: true
-  max_mb: 10        # Tamaño máximo de cada fichero de log en MB
-  backup_count: 10  # Número de ficheros de log a conservar
-
 pei:
   port: "/dev/ttyUSB0"
   baudrate: 9600
@@ -53,10 +47,15 @@ email:
   smtp_host: "smtp.gmail.com"
   smtp_port: 587
   use_tls: true                   # STARTTLS (recomendado). false → sin cifrado
-  # Credenciales en .env: EMAIL_USER y EMAIL_PASSWORD
   to: "admin@example.com"         # Destinatario (puede ser lista separada por comas)
   alerts:
     startup: true                 # Email cuando la aplicación arranca
     shutdown: true                # Email cuando la aplicación se cierra
     radio_disconnected: true      # Email cuando la radio se desconecta
     # radio_connected: false      # Descomentado si quieres también reconexiones
+
+logging:
+  level: INFO       # INFO, WARNING, ERROR, CRITICAL
+  console: true
+  max_mb: 10        # Tamaño máximo de cada fichero de log en MB
+  backup_count: 10  # Número de ficheros de log a conservar

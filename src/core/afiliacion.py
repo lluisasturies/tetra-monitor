@@ -43,7 +43,7 @@ class AfiliacionConfig:
                 self.scan_list = str(raw_scan_list) if raw_scan_list else None
                 self._last_mtime = self._filepath.stat().st_mtime
                 scan_log = self.scan_list or "(ninguna)"
-                logger.info(f"Afiliacion config cargada — gssi='{self.gssi}', scan_list='{scan_log}'")
+                logger.info(f"Afiliacion cargada — gssi='{self.gssi}', scan_list='{scan_log}'")
             except yaml.YAMLError as e:
                 logger.error(f"Error leyendo afiliacion config: {e}")
                 self.gssi = ""
