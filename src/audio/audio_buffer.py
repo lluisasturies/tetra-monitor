@@ -8,6 +8,10 @@ from core.logger import logger
 # Número de samples por chunk — debe coincidir con el blocksize de sd.InputStream
 BLOCK_SIZE = 1024
 
+# Máximo de chunks en la cola de streaming (~10s a 16kHz/1024 samples por chunk)
+# Si el streamer no consume, descartamos los más antiguos para no crecer indefinidamente
+STREAM_QUEUE_MAXSIZE = 160
+
 
 class AudioBuffer:
     def __init__(self, device_index, sample_rate, channels, prebuffer_seconds, output_dir):
@@ -23,8 +27,8 @@ class AudioBuffer:
         # Cola de pre-buffer para grabación — tamaño fijo en chunks, descarta el más antiguo si está llena
         self._record_buffer = queue.Queue(maxsize=prebuffer_chunks)
 
-        # Cola para streaming — sin límite de tamaño, el streamer la drena a su ritmo
-        self._stream_queue = queue.Queue()
+        # Cola para streaming — tamaño acotado; si el streamer no consume se descarta el chunk más antiguo
+        self._stream_queue = queue.Queue(maxsize=STREAM_QUEUE_MAXSIZE)
 
         self.recording = False
         self.frames = []
@@ -33,7 +37,8 @@ class AudioBuffer:
 
         logger.info(
             f"AudioBuffer configurado — prebuffer: {prebuffer_seconds}s "
-            f"({prebuffer_chunks} chunks x {BLOCK_SIZE} samples)"
+            f"({prebuffer_chunks} chunks x {BLOCK_SIZE} samples), "
+            f"stream_queue maxsize: {STREAM_QUEUE_MAXSIZE}"
         )
 
     def start_buffer(self):
@@ -48,11 +53,16 @@ class AudioBuffer:
                 self._record_buffer.get_nowait()
             self._record_buffer.put_nowait(chunk)
 
-            # Cola de streaming: independiente, no afecta a la grabación
+            # Cola de streaming: si está llena, descartamos el chunk más antiguo antes de insertar
+            if self._stream_queue.full():
+                try:
+                    self._stream_queue.get_nowait()
+                except queue.Empty:
+                    pass
             try:
                 self._stream_queue.put_nowait(chunk)
             except queue.Full:
-                pass  # Si el streamer no consume, descartamos — mejor perder audio de streaming que bloquear
+                pass  # carrera remota, ignoramos
 
             # Acumular frames si estamos grabando
             if self.recording:
