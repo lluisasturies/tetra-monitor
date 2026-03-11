@@ -86,6 +86,10 @@ def _init_standalone():
     app_state.grupos     = grupos_db
     app_state.afiliacion = afiliacion
 
+    # Nota: keyword_filter NO se inicializa en modo standalone.
+    # app_state.keyword_filter lo establece el daemon PEI al arrancar.
+    # Los endpoints /keywords devolverán 503 hasta que el daemon esté activo.
+
     grupos_db.seed_from_yaml(GRUPOS_PATH)
     logger.info("[API standalone] Dependencias inicializadas correctamente")
 
@@ -136,8 +140,15 @@ def _require_grupos():
         raise HTTPException(status_code=503, detail="Servicio no disponible aún")
 
 def _require_keywords():
+    """
+    keyword_filter lo establece el daemon PEI, no _init_standalone.
+    Devuelve 503 con mensaje descriptivo si el daemon aún no ha arrancado.
+    """
     if app_state.keyword_filter is None:
-        raise HTTPException(status_code=503, detail="Servicio no disponible aún")
+        raise HTTPException(
+            status_code=503,
+            detail="El filtro de keywords no está disponible. El daemon PEI debe estar activo.",
+        )
 
 
 def _get_db_metrics() -> dict:
@@ -347,7 +358,10 @@ def llamada_detalle(request: Request, llamada_id: int):
 @app.get("/keywords", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def listar_keywords(request: Request):
-    """Devuelve la lista actual de keywords activas."""
+    """
+    Devuelve la lista actual de keywords activas.
+    Requiere que el daemon PEI esté activo (devuelve 503 en caso contrario).
+    """
     _require_keywords()
     return {"keywords": app_state.keyword_filter.keywords}
 
@@ -355,7 +369,10 @@ def listar_keywords(request: Request):
 @app.post("/keywords", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
 def añadir_keyword(request: Request, body: KeywordAdd):
-    """Añade una keyword. Si ya existe devuelve 409."""
+    """
+    Añade una keyword con recarga en caliente. Devuelve 409 si ya existe.
+    Requiere que el daemon PEI esté activo (devuelve 503 en caso contrario).
+    """
     _require_keywords()
     kw = body.keyword.strip()
     if not kw:
@@ -369,7 +386,10 @@ def añadir_keyword(request: Request, body: KeywordAdd):
 @app.delete("/keywords/{keyword}", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
 def eliminar_keyword(request: Request, keyword: str):
-    """Elimina una keyword. Si no existe devuelve 404."""
+    """
+    Elimina una keyword con recarga en caliente. Devuelve 404 si no existe.
+    Requiere que el daemon PEI esté activo (devuelve 503 en caso contrario).
+    """
     _require_keywords()
     removed = app_state.keyword_filter.remove(keyword)
     if not removed:
