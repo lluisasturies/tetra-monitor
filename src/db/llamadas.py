@@ -1,13 +1,16 @@
 from datetime import datetime
+from psycopg2 import sql
 from psycopg2.extras import RealDictCursor
 from core.logger import logger
 from db.pool import DBPool
 
-_BASE_SELECT = """
+_BASE_SELECT = sql.SQL("""
     SELECT l.*, g.nombre AS grupo_nombre
     FROM llamadas l
     LEFT JOIN grupos g ON g.gssi = l.grupo
-"""
+""")
+
+_COUNT_SELECT = sql.SQL("SELECT COUNT(*) FROM llamadas l")
 
 
 class LlamadasDB:
@@ -41,7 +44,7 @@ class LlamadasDB:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    _BASE_SELECT + "ORDER BY l.timestamp DESC LIMIT %s",
+                    _BASE_SELECT + sql.SQL("ORDER BY l.timestamp DESC LIMIT %s"),
                     (limit,),
                 )
                 return cur.fetchall()
@@ -62,36 +65,35 @@ class LlamadasDB:
         """
         Listado con paginación y filtros opcionales.
         Devuelve (filas, total) donde total es el número de resultados sin paginar.
-        Usa SQL parametrizado para todas las condiciones del WHERE.
+        La query se compone con psycopg2.sql para evitar cualquier interpolación directa.
         """
-        conditions: list[str] = []
+        clauses: list[sql.Composable] = []
         params: list = []
 
         if gssi is not None:
-            conditions.append("l.grupo = %s")
+            clauses.append(sql.SQL("l.grupo = %s"))
             params.append(gssi)
         if ssi is not None:
-            conditions.append("l.ssi = %s")
+            clauses.append(sql.SQL("l.ssi = %s"))
             params.append(ssi)
         if texto:
-            conditions.append("l.texto ILIKE %s")
+            clauses.append(sql.SQL("l.texto ILIKE %s"))
             params.append(f"%{texto}%")
 
-        # La cláusula WHERE se construye solo con literales hardcodeados (%s),
-        # nunca con valores de usuario interpolados directamente en el string SQL.
-        where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        where = (
+            sql.SQL(" WHERE ") + sql.SQL(" AND ").join(clauses)
+            if clauses
+            else sql.SQL("")
+        )
 
         conn = self.pool.getconn()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    f"SELECT COUNT(*) FROM llamadas l {where_clause}",  # noqa: S608
-                    params,
-                )
+                cur.execute(_COUNT_SELECT + where, params)
                 total = cur.fetchone()["count"]
 
                 cur.execute(
-                    f"{_BASE_SELECT} {where_clause} ORDER BY l.timestamp DESC LIMIT %s OFFSET %s",  # noqa: S608
+                    _BASE_SELECT + where + sql.SQL(" ORDER BY l.timestamp DESC LIMIT %s OFFSET %s"),
                     params + [limit, offset],
                 )
                 rows = cur.fetchall()
@@ -107,7 +109,7 @@ class LlamadasDB:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    _BASE_SELECT + "WHERE l.id = %s",
+                    _BASE_SELECT + sql.SQL("WHERE l.id = %s"),
                     (llamada_id,),
                 )
                 row = cur.fetchone()
