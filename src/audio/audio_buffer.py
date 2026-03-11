@@ -106,7 +106,7 @@ class AudioBuffer:
         """Descarta la grabación en curso sin escribir nada en disco."""
         self.recording = False
         self.frames = []
-        logger.debug("AudioBuffer: grabación abortada, frames descartados")
+        logger.warning("Grabación abortada — frames descartados sin escribir en disco")
 
     def get_chunk(self):
         """Devuelve el siguiente chunk para el streamer — cola independiente de la grabación."""
