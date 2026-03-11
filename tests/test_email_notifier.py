@@ -6,11 +6,14 @@ import unittest.mock as mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+# Parchar en el namespace del módulo bajo test, no en el global
+_SMTP_PATH = "integrations.email_notifier.smtplib.SMTP"
+
 from integrations.email_notifier import EmailNotifier  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# Fixture
+# Fixtures
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
@@ -34,12 +37,17 @@ def notifier():
 
 @pytest.fixture
 def smtp_mock():
-    """Mock de smtplib.SMTP como context manager."""
-    with mock.patch("smtplib.SMTP") as m:
+    """Mock de smtplib.SMTP en el namespace correcto."""
+    with mock.patch(_SMTP_PATH) as m:
         instance = mock.MagicMock()
         m.return_value.__enter__ = mock.Mock(return_value=instance)
         m.return_value.__exit__  = mock.Mock(return_value=False)
         yield m, instance
+
+
+def _subject_from_call(instance) -> str:
+    """Extrae el mensaje MIME completo que se pasó a sendmail."""
+    return instance.sendmail.call_args[0][2]
 
 
 # ---------------------------------------------------------------------------
@@ -107,32 +115,28 @@ def test_startup_envia_email(notifier, smtp_mock):
     instance.starttls.assert_called_once()
     instance.login.assert_called_once_with("test@example.com", "secret")
     instance.sendmail.assert_called_once()
-    subject = instance.sendmail.call_args[0][2]
-    assert "[TETRA] Sistema iniciado" in subject
+    assert "[TETRA] Sistema iniciado" in _subject_from_call(instance)
 
 
 def test_shutdown_envia_email(notifier, smtp_mock):
     _, instance = smtp_mock
     notifier.notificar_shutdown()
     instance.sendmail.assert_called_once()
-    subject = instance.sendmail.call_args[0][2]
-    assert "[TETRA] Sistema detenido" in subject
+    assert "[TETRA] Sistema detenido" in _subject_from_call(instance)
 
 
 def test_radio_desconectada_envia_email(notifier, smtp_mock):
     _, instance = smtp_mock
     notifier.notificar_radio_desconectada()
     instance.sendmail.assert_called_once()
-    subject = instance.sendmail.call_args[0][2]
-    assert "Radio desconectada" in subject
+    assert "Radio desconectada" in _subject_from_call(instance)
 
 
 def test_radio_conectada_envia_email(notifier, smtp_mock):
     _, instance = smtp_mock
     notifier.notificar_radio_conectada()
     instance.sendmail.assert_called_once()
-    subject = instance.sendmail.call_args[0][2]
-    assert "Radio reconectada" in subject
+    assert "Radio reconectada" in _subject_from_call(instance)
 
 
 def test_destinatarios_multiples(smtp_mock):
@@ -165,7 +169,7 @@ def test_sin_tls_no_llama_starttls(smtp_mock):
 # ---------------------------------------------------------------------------
 
 def test_error_smtp_no_propaga(notifier):
-    with mock.patch("smtplib.SMTP", side_effect=OSError("conexión rechazada")):
+    with mock.patch(_SMTP_PATH, side_effect=OSError("conexión rechazada")):
         notifier.notificar_startup()  # no debe lanzar excepción
 
 
@@ -174,19 +178,34 @@ def test_error_autenticacion_no_reintenta(notifier, smtp_mock):
     instance.login.side_effect = smtplib.SMTPAuthenticationError(535, b"auth failed")
     notifier.max_retries = 3
     notifier.notificar_startup()
-    # Solo debe haber intentado login una vez (sin reintentos)
-    assert instance.login.call_count == 1
+    assert instance.login.call_count == 1  # sin reintentos
 
 
-def test_reintento_en_error_transitorio(smtp_mock):
-    _, instance = smtp_mock
-    # Falla en primer intento, éxito en segundo
-    instance.sendmail.side_effect = [OSError("timeout"), None]
-    n = EmailNotifier(
-        smtp_host="h", smtp_port=587, user="u", password="p",
-        to="a@b.com", enabled=True, max_retries=3,
-        alerts={"startup": True},
-    )
-    with mock.patch("time.sleep"):  # evitar espera real
-        n.notificar_startup()
-    assert instance.sendmail.call_count == 2
+def test_reintento_en_error_transitorio():
+    """
+    Simula fallo en primer intento y éxito en segundo.
+    Cada reintento abre una nueva conexión SMTP, por eso
+    configuramos el side_effect sobre la clase (cada __enter__
+    devuelve una instancia nueva con su propio sendmail).
+    """
+    call_count = {"n": 0}
+
+    def smtp_factory(*args, **kwargs):
+        instance = mock.MagicMock()
+        instance.__enter__ = mock.Mock(return_value=instance)
+        instance.__exit__  = mock.Mock(return_value=False)
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            instance.sendmail.side_effect = OSError("timeout")
+        return instance
+
+    with mock.patch(_SMTP_PATH, side_effect=smtp_factory):
+        with mock.patch("time.sleep"):
+            n = EmailNotifier(
+                smtp_host="h", smtp_port=587, user="u", password="p",
+                to="a@b.com", enabled=True, max_retries=3,
+                alerts={"startup": True},
+            )
+            n.notificar_startup()
+
+    assert call_count["n"] == 2  # primer intento falló, segundo tuvo éxito
