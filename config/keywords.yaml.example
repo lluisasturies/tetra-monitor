@@ -1,0 +1,12 @@
+# Lista de palabras clave que activan el guardado y la alerta.
+# La comparacion es case-insensitive y busca coincidencia parcial en la transcripcion.
+#
+# Copia este fichero y renombralo:
+#   cp config/keywords.yaml.example config/keywords.yaml
+#
+# A continuacion edita keywords.yaml con tus propias palabras clave.
+
+keywords:
+  - "emergencia"
+  - "accidente"
+  - "incendio"
