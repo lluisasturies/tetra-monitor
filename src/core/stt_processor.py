@@ -5,10 +5,16 @@ from core.logger import logger
 
 
 class STTProcessor:
-    def __init__(self, model_name: str = "base", language: str = "es"):
-        logger.info(f"Cargando modelo Whisper '{model_name}'...")
+    def __init__(self, model_name: str = "base", language: str = "es", fp16: bool = False):
+        """
+        fp16: usar precisión media en inferencia.
+              False por defecto (obligatorio en RPi/CPU ARM).
+              Activar solo si se dispone de GPU compatible.
+        """
+        logger.info(f"Cargando modelo Whisper '{model_name}' (fp16={fp16})...")
         self.model = whisper.load_model(model_name)
         self.language = language
+        self.fp16 = fp16
         logger.info(f"Modelo Whisper '{model_name}' cargado correctamente")
 
     def transcribe(self, filepath: str | None) -> str:
@@ -26,7 +32,7 @@ class STTProcessor:
             result = self.model.transcribe(
                 filepath,
                 language=self.language,
-                fp16=False  # imprescindible en RPi (CPU ARM)
+                fp16=self.fp16,
             )
             texto = result.get("text", "").strip().lower()
             elapsed = time.time() - start

@@ -28,6 +28,7 @@ streaming:
 stt:
   model: "base"     # tiny/base en RPi, small/medium si hay más RAM
   language: "es"
+  fp16: false       # false obligatorio en RPi (CPU ARM); true solo con GPU compatible
 
 database:
   host: "localhost"
