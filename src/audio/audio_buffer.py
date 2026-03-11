@@ -102,6 +102,12 @@ class AudioBuffer:
         finally:
             self.frames = []
 
+    def abort_recording(self):
+        """Descarta la grabación en curso sin escribir nada en disco."""
+        self.recording = False
+        self.frames = []
+        logger.debug("AudioBuffer: grabación abortada, frames descartados")
+
     def get_chunk(self):
         """Devuelve el siguiente chunk para el streamer — cola independiente de la grabación."""
         try:
