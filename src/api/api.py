@@ -2,7 +2,7 @@ import os
 import secrets
 import bcrypt
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -170,7 +170,7 @@ def _get_db_metrics() -> dict:
 def create_access_token(username: str) -> str:
     payload = {
         "sub": username,
-        "exp": datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_HOURS),
+        "exp": datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_HOURS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -236,10 +236,11 @@ def health(request: Request):
     radio_ok    = app_state.radio_connected
     telegram_ok = app_state.bot is not None
     streaming   = app_state.streaming_active
-    status      = "ok" if (db_ok and pei_ok and radio_ok) else "degraded"
+    degraded    = not (db_ok and pei_ok and radio_ok)
+    status      = "degraded" if degraded else "ok"
     metrics     = _get_db_metrics()
 
-    return {
+    body = {
         "status":       status,
         "db":           db_ok,
         "pei":          pei_ok,
@@ -249,6 +250,10 @@ def health(request: Request):
         "calls_today":  metrics["calls_today"],
         "last_call_at": metrics["last_call_at"],
     }
+    # 503 cuando degraded para que los monitores externos detecten el problema
+    # sin tener que parsear el cuerpo JSON
+    http_status = 503 if degraded else 200
+    return JSONResponse(content=body, status_code=http_status)
 
 
 # ------------------------------------------------------------------
