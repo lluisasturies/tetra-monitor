@@ -1,12 +1,8 @@
+import yaml
 from pathlib import Path
 from psycopg2.extras import RealDictCursor
 from core.logger import logger
 from db.pool import DBPool
-
-try:
-    import yaml
-except ImportError:
-    yaml = None  # type: ignore
 
 
 class GruposDB:
@@ -24,10 +20,6 @@ class GruposDB:
         automáticamente por posición en el YAML (0, 1, 2...) si no se especifica.
         Devuelve True si se insertaron datos, False si ya había datos o hubo error.
         """
-        if yaml is None:
-            logger.error("[GruposDB] PyYAML no disponible, no se puede cargar la semilla")
-            return False
-
         filepath = Path(filepath)
         if not filepath.exists():
             logger.warning(f"[GruposDB] No existe el fichero de semilla: {filepath}")
