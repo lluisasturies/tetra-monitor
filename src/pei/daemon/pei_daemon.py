@@ -46,6 +46,7 @@ class PEIDaemon:
         self._watchdog_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._reconnect_requested = threading.Event()
+        self._shutting_down = False  # True durante shutdown voluntario
         self._init_radio()
 
     # ------------------------------------------------------------------
@@ -53,14 +54,16 @@ class PEIDaemon:
     # ------------------------------------------------------------------
 
     def _set_radio_connected(self, connected: bool):
-        """Actualiza estado en app_state y notifica al bot/email si cambia."""
+        """Actualiza estado en app_state y notifica por email si cambia.
+        Durante un shutdown voluntario no se envía alerta de desconexion.
+        """
         prev = app_state.radio_connected
         app_state.radio_connected = connected
         self.bot.radio_active = connected
         if connected and not prev:
             if self.email:
                 self.email.notificar_radio_conectada()
-        elif not connected and prev:
+        elif not connected and prev and not self._shutting_down:
             if self.email:
                 self.email.notificar_radio_desconectada()
 
@@ -325,6 +328,7 @@ class PEIDaemon:
 
     def shutdown(self, streamer=None):
         logger.info("Apagando PEI...")
+        self._shutting_down = True  # suprimir alerta de radio desconectada
         self._stop_event.set()
         self._set_radio_connected(False)
         self._executor.shutdown(wait=True)
