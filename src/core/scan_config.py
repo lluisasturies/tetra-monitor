@@ -1,3 +1,3 @@
-# Este fichero ha sido reemplazado por core/afiliacion.py
-# Mantenido temporalmente para evitar errores en importaciones antiguas.
-from core.afiliacion import AfiliacionConfig as ScanConfig  # noqa: F401
+# Módulo eliminado — reemplazado por core/afiliacion.py
+# Este fichero se conserva vacío para no romper imports residuales.
+# Puedes eliminarlo cuando confirmes que nada lo importa.

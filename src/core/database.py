@@ -1,4 +1,3 @@
-# Este módulo ha sido refactorizado.
-# La lógica de conexión está ahora en src/db/pool.py
-# Las queries están en src/db/llamadas.py
-# Este fichero se mantiene temporalmente para no romper imports externos.
+# Módulo eliminado — la lógica vive en src/db/
+# Este fichero se conserva vacío para no romper imports residuales.
+# Puedes eliminarlo cuando confirmes que nada lo importa.
