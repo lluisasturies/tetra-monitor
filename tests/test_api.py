@@ -54,9 +54,9 @@ def client(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_health_degraded_sin_subsistemas(client):
-    """Sin BD ni PEI inicializados el status debe ser 'degraded'."""
+    """Sin BD ni PEI inicializados: status degraded y HTTP 503."""
     resp = client.get("/health")
-    assert resp.status_code == 200
+    assert resp.status_code == 503
     data = resp.json()
     assert data["status"] == "degraded"
     assert data["db"] is False
@@ -66,7 +66,7 @@ def test_health_degraded_sin_subsistemas(client):
 
 
 def test_health_ok_con_subsistemas_activos(client):
-    """Con BD, PEI y radio mockeados el status debe ser 'ok'."""
+    """Con BD, PEI y radio mockeados: status ok y HTTP 200."""
     app_state.pool            = mock.MagicMock()
     app_state.afiliacion      = mock.MagicMock()
     app_state.radio_connected = True
@@ -80,12 +80,12 @@ def test_health_ok_con_subsistemas_activos(client):
 
 
 def test_health_degraded_si_radio_desconectada(client):
-    """Con BD y PEI activos pero radio desconectada el status debe ser 'degraded'."""
+    """Con BD y PEI activos pero radio desconectada: status degraded y HTTP 503."""
     app_state.pool       = mock.MagicMock()
     app_state.afiliacion = mock.MagicMock()
     # radio_connected = False (por defecto del fixture)
     resp = client.get("/health")
-    assert resp.status_code == 200
+    assert resp.status_code == 503
     data = resp.json()
     assert data["status"] == "degraded"
     assert data["radio"] is False
@@ -98,6 +98,7 @@ def test_health_streaming_activo(client):
     app_state.radio_connected  = True
     app_state.streaming_active = True
     resp = client.get("/health")
+    assert resp.status_code == 200
     data = resp.json()
     assert data["streaming"] is True
     assert data["status"] == "ok"  # streaming no afecta a status

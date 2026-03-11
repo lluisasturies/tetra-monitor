@@ -46,9 +46,12 @@ def test_keywords_vacias(tmp_path):
     assert kf.contiene_evento("incendio") is False
 
 
-def test_fichero_no_existe():
-    with pytest.raises(FileNotFoundError):
-        KeywordFilter("/ruta/que/no/existe/keywords.yaml")
+def test_fichero_no_existe_crea_vacio(tmp_path):
+    """Si el YAML no existe, KeywordFilter lo crea vacío y arranca sin error."""
+    path = tmp_path / "subdir" / "keywords.yaml"
+    kf = KeywordFilter(str(path))
+    assert path.exists()
+    assert kf.keywords == []
 
 
 def test_reload_if_changed_sin_cambios(keywords_file):
