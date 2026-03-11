@@ -1,3 +1,6 @@
-afiliacion:
-  gssi: "36001"
-  scan_list: "ListaScan1"
+# Este fichero esta ignorado por Git y no se versiona.
+# Copia afiliacion.yaml.example y renombralo a afiliacion.yaml:
+#
+#   cp config/afiliacion.yaml.example config/afiliacion.yaml
+#
+# O ejecuta directamente: make init

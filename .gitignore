@@ -5,11 +5,11 @@ venv/
 # Variables de entorno
 .env
 
-# Configuracion local (usa config/config.yaml.example como base)
+# Ficheros de configuracion local (usa los .example como base o ejecuta: make init)
 config/config.yaml
-
-# Keywords locales (usa config/keywords.yaml.example como base)
 config/keywords.yaml
+config/afiliacion.yaml
+config/grupos.yaml
 
 # Grabaciones de audio
 data/audio/

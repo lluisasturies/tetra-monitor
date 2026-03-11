@@ -5,16 +5,16 @@
 ░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀▀▀░▀▀▀░░▀░░▀▀▀░▀░▀
 ```
 
-Sistema de monitorización de redes TETRA sobre Raspberry Pi. Escucha eventos PTT en tiempo real, transcribe el audio con Whisper, filtra por palabras clave y envía alertas por Telegram.
+Sistema de monitorizacion de redes TETRA sobre Raspberry Pi. Escucha eventos PTT en tiempo real, transcribe el audio con Whisper, filtra por palabras clave y envia alertas por Telegram.
 
-* 📡 **Captura de eventos TETRA** — Motorola PEI (AT commands sobre serie)
-* 🖥️ **Grabación de audio** — `sounddevice` + `soundfile`
-* 🗣️ **Speech-to-Text** — OpenAI Whisper
-* 📲 **Notificaciones** — Telegram Bot API + Email (SMTP)
-* 🗄️ **PostgreSQL** — almacenamiento de llamadas, catálogo de grupos y scan lists
-* 🎧 **Streaming de audio** — Icecast o RTMP
-* 🔗 **API REST** — FastAPI con autenticación JWT + rate limiting
-* 🔒 **HTTPS opcional** — nginx como proxy inverso con TLS
+* Captura de eventos TETRA — Motorola PEI (AT commands sobre serie)
+* Grabacion de audio — `sounddevice` + `soundfile`
+* Speech-to-Text — OpenAI Whisper
+* Notificaciones — Telegram Bot API + Email (SMTP)
+* PostgreSQL — almacenamiento de llamadas, catalogo de grupos y scan lists
+* Streaming de audio — Icecast o RTMP
+* API REST — FastAPI con autenticacion JWT + rate limiting
+* HTTPS opcional — nginx como proxy inverso con TLS
 
 ---
 
@@ -22,31 +22,31 @@ Sistema de monitorización de redes TETRA sobre Raspberry Pi. Escucha eventos PT
 
 ```mermaid
 flowchart TD
-    RADIO["📡 Radio TETRA\n(Motorola)"] -->|AT commands / serie| PEI
+    RADIO["Radio TETRA (Motorola)"] -->|AT commands / serie| PEI
 
-    subgraph PROCESO["Proceso único en Raspberry Pi"]
-        PEI["PEI Daemon\n(pei_daemon.py)"] -->|evento PTT| AUDIO
-        AUDIO["AudioBuffer\n(sounddevice)"] -->|fichero WAV| STT
-        STT["STT Processor\n(Whisper)"] -->|texto| KF
+    subgraph PROCESO["Proceso unico en Raspberry Pi"]
+        PEI["PEI Daemon (pei_daemon.py)"] -->|evento PTT| AUDIO
+        AUDIO["AudioBuffer (sounddevice)"] -->|fichero WAV| STT
+        STT["STT Processor (Whisper)"] -->|texto| KF
         KF["KeywordFilter"] -->|match| DB
         KF -->|match| BOT
         PEI -.->|recarga mtime| AFIL
-        AFIL["AfiliacionConfig\n(afiliacion.yaml)"] -.->|GSSI / scan list| PEI
+        AFIL["AfiliacionConfig (afiliacion.yaml)"] -.->|GSSI / scan list| PEI
 
-        API["API REST\n(FastAPI / hilo)"] -->|lee/escribe| DB
+        API["API REST (FastAPI / hilo)"] -->|lee/escribe| DB
         API -->|actualiza| AFIL
     end
 
-    DB[("PostgreSQL\nllamadas / grupos")]
-    BOT["Telegram Bot"] -->|alerta| USER["👤 Operador"]
+    DB[("PostgreSQL (llamadas / grupos)")]
+    BOT["Telegram Bot"] -->|alerta| USER["Operador"]
     AUDIO -->|stream| ICE["Icecast / RTMP"]
     API -->|HTTP/HTTPS| CLIENT["Cliente REST"]
-    NGINX["nginx (opcional)\nTLS proxy"] --> API
+    NGINX["nginx (opcional, TLS proxy)"] --> API
 ```
 
 ---
 
-## Instalación
+## Instalacion
 
 ### 1. Clonar el repositorio
 ```bash
@@ -54,21 +54,38 @@ git clone https://github.com/lluisasturies/tetra-monitor.git
 cd tetra-monitor
 ```
 
-### 2. Crear el fichero de configuración
+### 2. Inicializar los ficheros de configuracion
 ```bash
-cp config/config.yaml.example config/config.yaml
-nano config/config.yaml
+make init
 ```
 
-Ajusta los valores según tu entorno. El fichero `config/config.yaml` está en `.gitignore` y nunca se versiona.
+Esto copia de una vez todos los ficheros `.example` a su version local:
 
-### 3. Crear el fichero de entorno
+| Fichero generado | Plantilla |
+|---|---|
+| `config/config.yaml` | `config/config.yaml.example` |
+| `config/keywords.yaml` | `config/keywords.yaml.example` |
+| `config/afiliacion.yaml` | `config/afiliacion.yaml.example` |
+| `config/grupos.yaml` | `config/grupos.yaml.example` |
+| `.env` | `.env.example` |
+
+Ninguno de estos ficheros se versiona — estan en `.gitignore`. Si ya existen con contenido, `make init` los omite sin sobreescribir.
+
+A continuacion edita cada fichero con tus valores reales.
+
+### 3. Ejecutar el setup
+El script instala automaticamente Python, PostgreSQL, ffmpeg y las dependencias Python, pre-descarga el modelo Whisper y aplica el schema de base de datos. Al final pregunta si instalar HTTPS con nginx:
 ```bash
-cp .env.example .env
-nano .env
+make setup
 ```
 
-Variables necesarias en `.env`:
+### 4. Configurar la contrasena de la API
+```bash
+make set-password
+```
+El script pide la contrasena dos veces, genera el hash bcrypt y lo escribe directamente en `.env`.
+
+### 5. Variables necesarias en `.env`
 ```env
 DB_USER=tetra
 DB_PASSWORD=changeme
@@ -80,39 +97,12 @@ TELEGRAM_CHAT_ID=your_chat_id
 JWT_SECRET=genera_un_secreto_largo_y_aleatorio
 
 API_USER=admin
-# Hash bcrypt de la contraseña — genera con: make set-password
+# Hash bcrypt de la contrasena — genera con: make set-password
 API_PASSWORD_HASH=$2b$12$...
 ```
 
 > `TELEGRAM_TOKEN` y `TELEGRAM_CHAT_ID` solo son obligatorias si `features.telegram_enabled: true` en `config.yaml`.
 > `EMAIL_USER` y `EMAIL_PASSWORD` solo son obligatorias si `features.email_enabled: true` en `config.yaml`.
-
-### 4. Ejecutar el setup
-El script instala automáticamente Python, PostgreSQL, ffmpeg y las dependencias Python, pre-descarga el modelo Whisper y aplica el schema de base de datos. Al final pregunta si instalar HTTPS con nginx:
-```bash
-make setup
-```
-
-### 5. Configurar la contraseña de la API
-```bash
-make set-password
-```
-El script pide la contraseña dos veces, genera el hash bcrypt y lo escribe directamente en `.env`.
-
-### 6. (Opcional) Personalizar el catálogo de grupos
-Edita `config/grupos.yaml` antes del primer arranque para definir los GSSIs y scan lists de tu red. En el primer arranque se cargan automáticamente en la BD. A partir de entonces el catálogo se gestiona directamente desde la BD (vía API o con `make reload-grupos`).
-
-```yaml
-grupos:
-  - gssi: 36001
-    nombre: "Operaciones"
-  - gssi: 36002
-    nombre: "Emergencias"
-
-scan_lists:
-  - nombre: "ListaScan1"
-    grupos: [36001, 36002]
-```
 
 ---
 
@@ -121,12 +111,13 @@ scan_lists:
 make start
 ```
 
-El daemon PEI y la API REST arrancan juntos en el mismo proceso. La API queda disponible en `http://raspberrypi:8000` (o `https://raspberrypi` si se instaló nginx).
+El daemon PEI y la API REST arrancan juntos en el mismo proceso. La API queda disponible en `http://raspberrypi:8000` (o `https://raspberrypi` si se instalo nginx).
 
 ---
 
 ## Makefile
 ```bash
+make init               # Copia todos los ficheros .example a su config local
 make setup              # Instala dependencias y prepara el entorno
 make setup-https        # Instala nginx con TLS (certificado autofirmado)
 make set-password       # Genera hash bcrypt y lo guarda en .env
@@ -138,8 +129,8 @@ make logs               # Muestra los logs en tiempo real (journalctl)
 make logs-file          # Muestra los logs en tiempo real (fichero local)
 make install-service    # Instala tetra-monitor como servicio systemd
 make uninstall-service  # Elimina el servicio systemd
-make update             # git pull + reinicia el servicio si está activo
-make reload-grupos      # Recarga catálogo de grupos desde config/grupos.yaml
+make update             # git pull + reinicia el servicio si esta activo
+make reload-grupos      # Recarga catalogo de grupos desde config/grupos.yaml
 make backup-db          # Volcado de la BD en data/backups/
 ```
 
@@ -150,14 +141,14 @@ Para exponer la API con TLS usando nginx como proxy inverso:
 ```bash
 make setup-https
 ```
-Genera un certificado autofirmado RSA 4096 bits con validez de 10 años en `/etc/ssl/tetra-monitor/`. La API interna sigue corriendo en `localhost:8000`; nginx escucha en el puerto 443 y redirige HTTP→HTTPS automáticamente.
+Genera un certificado autofirmado RSA 4096 bits con validez de 10 anos en `/etc/ssl/tetra-monitor/`. La API interna sigue corriendo en `localhost:8000`; nginx escucha en el puerto 443 y redirige HTTP a HTTPS automaticamente.
 
 Sin nginx la API funciona igualmente en HTTP en el puerto 8000.
 
 ---
 
-## Systemd (producción)
-Para que el daemon arranque automáticamente con la RPi y se reinicie si falla:
+## Systemd (produccion)
+Para que el daemon arranque automaticamente con la RPi y se reinicie si falla:
 ```bash
 make install-service
 sudo systemctl start tetra-monitor
@@ -179,17 +170,17 @@ make stop       # parar
 
 | Capa | Mecanismo |
 |---|---|
-| Autenticación | JWT (access token 1h) + refresh token (7 días, rotación) |
-| Contraseña | Hash bcrypt almacenado en `.env` — nunca en texto plano |
-| Rate limiting | 5 req/min en login, 30–60 req/min en el resto |
+| Autenticacion | JWT (access token 1h) + refresh token (7 dias, rotacion) |
+| Contrasena | Hash bcrypt almacenado en `.env` — nunca en texto plano |
+| Rate limiting | 5 req/min en login, 30-60 req/min en el resto |
 | Transporte | HTTPS con nginx (TLS 1.2/1.3, HSTS) — opcional |
-| Comandos AT | Validación regex antes de enviar a la radio |
+| Comandos AT | Validacion regex antes de enviar a la radio |
 | Logs | Sin credenciales — username truncado a 32 chars |
 
 ---
 
-## Flags de activación
-Todos los flags de activación están centralizados en la sección `features` de `config/config.yaml`:
+## Flags de activacion
+Todos los flags de activacion estan centralizados en la seccion `features` de `config/config.yaml`:
 
 | Flag | Efecto si `false` |
 |---|---|
@@ -197,13 +188,13 @@ Todos los flags de activación están centralizados en la sección `features` de
 | `features.processing_enabled` | Ignora todos los eventos PEI |
 | `features.streaming_enabled` | No inicia el streaming de audio |
 | `features.save_all_calls` | Solo guarda llamadas con keyword detectada |
-| `features.telegram_enabled` | No envía alertas por Telegram |
-| `features.email_enabled` | No envía notificaciones por email |
+| `features.telegram_enabled` | No envia alertas por Telegram |
+| `features.email_enabled` | No envia notificaciones por email |
 
 ---
 
 ## API REST
-Todos los endpoints (excepto `/health` y `/auth/*`) requieren autenticación JWT.
+Todos los endpoints (excepto `/health` y `/auth/*`) requieren autenticacion JWT.
 
 ### Obtener token
 ```bash
@@ -222,36 +213,36 @@ Respuesta:
 
 ### Endpoints
 
-| Método | Endpoint | Auth | Descripción |
+| Metodo | Endpoint | Auth | Descripcion |
 |---|---|---|---|
 | `GET` | `/health` | No | Healthcheck — estado de BD, PEI y Telegram |
 | `POST` | `/auth/token` | No | Login — obtener access + refresh token |
 | `POST` | `/auth/refresh` | No | Renovar access token con refresh token |
 | `POST` | `/auth/logout` | No | Invalidar refresh token |
-| `GET` | `/calls` | Sí | Listar llamadas (params: `limit`, `offset`, `gssi`, `ssi`, `texto`) |
-| `GET` | `/calls/{id}` | Sí | Detalle de una llamada |
-| `GET` | `/keywords` | Sí | Listar keywords activas |
-| `POST` | `/keywords` | Sí | Añadir keyword con recarga en caliente |
-| `DELETE` | `/keywords/{keyword}` | Sí | Eliminar keyword con recarga en caliente |
-| `GET` | `/afiliacion` | Sí | Ver GSSI y scan list activos en el radio |
-| `POST` | `/afiliacion/gssi` | Sí | Cambiar GSSI activo en el radio |
-| `POST` | `/afiliacion/scan-list` | Sí | Cambiar scan list activa en el radio |
-| `GET` | `/groups` | Sí | Listar catálogo de grupos (param: `solo_activos`) |
-| `GET` | `/groups/{gssi}` | Sí | Detalle de un grupo |
-| `POST` | `/groups` | Sí | Crear o actualizar un grupo (upsert) |
-| `GET` | `/folders` | Sí | Listar carpetas con grupos anidados |
-| `GET` | `/folders/{id}` | Sí | Detalle de una carpeta |
-| `POST` | `/folders` | Sí | Crear o actualizar una carpeta |
-| `PUT` | `/folders/{id}/groups` | Sí | Reemplazar grupos de una carpeta |
-| `DELETE` | `/folders/{id}` | Sí | Eliminar una carpeta |
-| `GET` | `/scan-lists` | Sí | Listar scan lists con sus grupos |
+| `GET` | `/calls` | Si | Listar llamadas (params: `limit`, `offset`, `gssi`, `ssi`, `texto`) |
+| `GET` | `/calls/{id}` | Si | Detalle de una llamada |
+| `GET` | `/keywords` | Si | Listar keywords activas |
+| `POST` | `/keywords` | Si | Anadir keyword con recarga en caliente |
+| `DELETE` | `/keywords/{keyword}` | Si | Eliminar keyword con recarga en caliente |
+| `GET` | `/afiliacion` | Si | Ver GSSI y scan list activos en el radio |
+| `POST` | `/afiliacion/gssi` | Si | Cambiar GSSI activo en el radio |
+| `POST` | `/afiliacion/scan-list` | Si | Cambiar scan list activa en el radio |
+| `GET` | `/groups` | Si | Listar catalogo de grupos (param: `solo_activos`) |
+| `GET` | `/groups/{gssi}` | Si | Detalle de un grupo |
+| `POST` | `/groups` | Si | Crear o actualizar un grupo (upsert) |
+| `GET` | `/folders` | Si | Listar carpetas con grupos anidados |
+| `GET` | `/folders/{id}` | Si | Detalle de una carpeta |
+| `POST` | `/folders` | Si | Crear o actualizar una carpeta |
+| `PUT` | `/folders/{id}/groups` | Si | Reemplazar grupos de una carpeta |
+| `DELETE` | `/folders/{id}` | Si | Eliminar una carpeta |
+| `GET` | `/scan-lists` | Si | Listar scan lists con sus grupos |
 
 ---
 
 ## Protocolo PEI (ETSI EN 300 392-5)
-Los eventos TETRA se parsean según el estándar ETSI:
+Los eventos TETRA se parsean segun el estandar ETSI:
 
-| Comando AT | Evento | Acción |
+| Comando AT | Evento | Accion |
 |---|---|---|
 | `+CTXG` | Transmission Grant | PTT_START / PTT_END |
 | `+CDTXC` | Down Transmission Ceased | PTT_END |
@@ -260,9 +251,9 @@ Los eventos TETRA se parsean según el estándar ETSI:
 | `+CTCR` | Call Release | CALL_END |
 | `+CTXD` | Transmit Demand | TX_DEMAND |
 
-> **Nota:** Los índices de parámetros de `+CTICN` dependen del perfil `+CTSDC` configurado en la radio. Verificar con logs reales del puerto serie antes de poner en producción.
+> **Nota:** Los indices de parametros de `+CTICN` dependen del perfil `+CTSDC` configurado en la radio. Verificar con logs reales del puerto serie antes de poner en produccion.
 
 ---
 
 ## Licencia
-Apache 2.0 — © 2026 Lluis de la Rubia / LluisAsturies
+Apache 2.0 — 2026 Lluis de la Rubia / LluisAsturies

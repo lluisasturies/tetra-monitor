@@ -8,7 +8,13 @@ SERVICE_TMPL  := $(PROJECT_ROOT)/scripts/tetra-monitor.service.template
 SERVICE_DEST  := /etc/systemd/system/$(SERVICE_NAME).service
 CURRENT_USER  := $(shell logname 2>/dev/null || echo $$SUDO_USER || echo $$USER)
 
-.PHONY: help setup setup-https set-password start stop restart logs logs-file \
+CONFIG_FILES := \
+	config/config.yaml \
+	config/keywords.yaml \
+	config/afiliacion.yaml \
+	config/grupos.yaml
+
+.PHONY: help init setup setup-https set-password start stop restart logs logs-file \
         install-service uninstall-service update status reload-grupos backup-db \
         test lint
 
@@ -16,6 +22,7 @@ help:
 	@echo ""
 	@echo "  TETRA Monitor — comandos disponibles"
 	@echo ""
+	@echo "  make init               Copia todos los ficheros .example a su config local"
 	@echo "  make setup              Instala dependencias y prepara el entorno"
 	@echo "  make setup-https        Instala nginx con TLS (certificado autofirmado)"
 	@echo "  make set-password       Genera hash bcrypt y lo guarda en .env"
@@ -27,12 +34,37 @@ help:
 	@echo "  make logs-file          Muestra los logs en tiempo real (fichero)"
 	@echo "  make install-service    Instala tetra-monitor como servicio systemd"
 	@echo "  make uninstall-service  Elimina el servicio systemd"
-	@echo "  make update             git pull + reinicia el servicio si está activo"
-	@echo "  make reload-grupos      Recarga el catálogo desde config/grupos.yaml"
+	@echo "  make update             git pull + reinicia el servicio si esta activo"
+	@echo "  make reload-grupos      Recarga el catalogo desde config/grupos.yaml"
 	@echo "  make backup-db          Volcado de la BD en data/backups/"
 	@echo "  make test               Ejecuta todos los tests con pytest"
 	@echo "  make lint               Comprueba el estilo con ruff"
 	@echo ""
+
+init:
+	@echo "Copiando ficheros de configuracion..."
+	@for f in $(CONFIG_FILES); do \
+		example=$${f%.yaml}.yaml.example; \
+		if [ -f "$$example" ]; then \
+			if [ -f "$$f" ] && grep -qv '^#' "$$f" 2>/dev/null; then \
+				echo "  [omitido] $$f ya existe con contenido"; \
+			else \
+				cp "$$example" "$$f"; \
+				echo "  [copiado] $$example -> $$f"; \
+			fi; \
+		else \
+			echo "  [aviso]   no se encontro $$example"; \
+		fi; \
+	done
+	@if [ ! -f .env ]; then \
+		cp .env.example .env; \
+		echo "  [copiado] .env.example -> .env"; \
+	else \
+		echo "  [omitido] .env ya existe"; \
+	fi
+	@echo ""
+	@echo "Listo. Edita los ficheros de config/ y .env con tus valores reales."
+	@echo "A continuacion ejecuta: make setup"
 
 setup:
 	sudo bash scripts/setup.sh

@@ -1,31 +1,6 @@
-# Catálogo de grupos TETRA, carpetas y listas de escaneo.
-# Este fichero se usa SOLO como semilla en el primer arranque.
-# Si la tabla 'grupos' ya tiene datos, este fichero se ignora.
-
-grupos:
-  - nombre: "Operaciones"
-    gssi: 36001
-  - nombre: "Emergencias"
-    gssi: 36002
-  - nombre: "Logística"
-    gssi: 36003
-  - nombre: "Seguridad"
-    gssi: 36004
-
-# Carpetas organizativas — equivalente a las folders de la radio.
-# El orden de las carpetas y de los grupos dentro de cada carpeta
-# se asigna automáticamente por posición (no hace falta especificarlo).
-# Un GSSI puede aparecer en varias carpetas.
-carpetas:
-  - nombre: "Operativo"
-    grupos: [36001, 36003]
-  - nombre: "Emergencias"
-    grupos: [36002, 36004]
-
-# Scan Lists -  Listas de escaneo 
-# Indican a la radio varios grupos para afiliarse simultáneamente
-scan_lists:
-  - nombre: "ListaScan1"
-    grupos: [36001, 36002, 36003]
-  - nombre: "Emergencias"
-    grupos: [36002, 36004]
+# Este fichero esta ignorado por Git y no se versiona.
+# Copia grupos.yaml.example y renombralo a grupos.yaml:
+#
+#   cp config/grupos.yaml.example config/grupos.yaml
+#
+# O ejecuta directamente: make init

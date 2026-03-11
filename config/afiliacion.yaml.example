@@ -1,0 +1,10 @@
+# Afiliacion activa de la radio — GSSI y scan list que usara el daemon al arrancar.
+# Copia este fichero y renombralo:
+#   cp config/afiliacion.yaml.example config/afiliacion.yaml
+#
+# El daemon recarga este fichero automaticamente si detecta cambios (hot reload).
+# Tambien puede actualizarse en caliente via API: POST /afiliacion/gssi y /afiliacion/scan-list
+
+afiliacion:
+  gssi: "36001"
+  scan_list: "ListaScan1"
