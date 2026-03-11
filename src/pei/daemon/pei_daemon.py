@@ -167,9 +167,10 @@ class PEIDaemon:
             logger.debug(f"[PEI] Transcripción encolada (timeout) para {path}")
 
     def _abort_recording(self):
+        """Descarta la grabación en curso sin tocar disco — solo resetea el estado en memoria."""
         if self._recording_start_time is not None:
             self._recording_start_time = None
-            self.audio_buffer.stop_recording("_aborted.flac")
+            self.audio_buffer.abort_recording()
             logger.warning("[PEI] Grabación activa descartada por reconexion")
 
     # ------------------------------------------------------------------
