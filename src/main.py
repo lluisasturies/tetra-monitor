@@ -62,22 +62,31 @@ def _load_config() -> dict:
 def _validate_env(cfg: dict) -> dict:
     telegram_enabled = cfg["telegram"].get("enabled", True)
     errors = []
-    if not os.getenv("DB_USER"):          errors.append("DB_USER")
-    if not os.getenv("DB_PASSWORD"):      errors.append("DB_PASSWORD")
-    if not os.getenv("JWT_SECRET"):       errors.append("JWT_SECRET")
-    if not os.getenv("API_USER"):         errors.append("API_USER")
+
+    if not os.getenv("DB_USER"):
+        errors.append("DB_USER")
+    if not os.getenv("DB_PASSWORD"):
+        errors.append("DB_PASSWORD")
+    if not os.getenv("JWT_SECRET"):
+        errors.append("JWT_SECRET")
+    if not os.getenv("API_USER"):
+        errors.append("API_USER")
     if not os.getenv("API_PASSWORD_HASH"):
         if os.getenv("API_PASSWORD"):
             logger.critical("API_PASSWORD ya no se usa — ejecuta 'make set-password' para migrar a API_PASSWORD_HASH")
         else:
             errors.append("API_PASSWORD_HASH")
     if telegram_enabled:
-        if not os.getenv("TELEGRAM_TOKEN"):   errors.append("TELEGRAM_TOKEN")
-        if not os.getenv("TELEGRAM_CHAT_ID"): errors.append("TELEGRAM_CHAT_ID")
+        if not os.getenv("TELEGRAM_TOKEN"):
+            errors.append("TELEGRAM_TOKEN")
+        if not os.getenv("TELEGRAM_CHAT_ID"):
+            errors.append("TELEGRAM_CHAT_ID")
+
     if errors:
         for var in errors:
             logger.critical(f"Variable de entorno obligatoria no definida: {var}")
         sys.exit(1)
+
     return {
         "db_user":          os.getenv("DB_USER", ""),
         "db_password":      os.getenv("DB_PASSWORD", ""),
@@ -167,8 +176,10 @@ def _init_api(cfg: dict) -> threading.Thread:
     except RuntimeError as e:
         logger.critical(f"Error al inicializar la API: {e}")
         sys.exit(1)
+
     def _run():
         uvicorn.run(app, host=cfg["api"]["host"], port=cfg["api"]["port"], log_level="warning")
+
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
     logger.info(f"API arrancada en {cfg['api']['host']}:{cfg['api']['port']}")
@@ -215,7 +226,7 @@ def main():
     logger.info(f"Streaming                : {'ACTIVADO'  if streaming_enabled  else 'DESACTIVADO'}")
     logger.info(f"Guardado en BD           : {'TODAS las llamadas' if save_all_calls else 'Solo llamadas con keyword'}")
     logger.info(f"Watchdog PEI             : {watchdog_timeout}s (0=desactivado)")
-    logger.info(f"Límite grabación        : {max_rec_seconds}s (0=desactivado)")
+    logger.info(f"Límite grabación         : {max_rec_seconds}s (0=desactivado)")
 
     _init_api(cfg)
     streamer = _init_streaming(cfg)
