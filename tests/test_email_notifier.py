@@ -3,13 +3,33 @@ import sys
 import smtplib
 import pytest
 import unittest.mock as mock
+from email import message_from_string
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-# Parchar en el namespace del módulo bajo test, no en el global
 _SMTP_PATH = "integrations.email_notifier.smtplib.SMTP"
 
 from integrations.email_notifier import EmailNotifier  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _subject_from_call(instance) -> str:
+    """Decodifica el subject del mensaje MIME enviado por sendmail."""
+    raw = instance.sendmail.call_args[0][2]
+    msg = message_from_string(raw)
+    # decode_header devuelve lista de (bytes_o_str, charset)
+    from email.header import decode_header
+    parts = decode_header(msg["Subject"])
+    decoded = ""
+    for part, charset in parts:
+        if isinstance(part, bytes):
+            decoded += part.decode(charset or "utf-8")
+        else:
+            decoded += part
+    return decoded
 
 
 # ---------------------------------------------------------------------------
@@ -43,11 +63,6 @@ def smtp_mock():
         m.return_value.__enter__ = mock.Mock(return_value=instance)
         m.return_value.__exit__  = mock.Mock(return_value=False)
         yield m, instance
-
-
-def _subject_from_call(instance) -> str:
-    """Extrae el mensaje MIME completo que se pasó a sendmail."""
-    return instance.sendmail.call_args[0][2]
 
 
 # ---------------------------------------------------------------------------
@@ -184,9 +199,8 @@ def test_error_autenticacion_no_reintenta(notifier, smtp_mock):
 def test_reintento_en_error_transitorio():
     """
     Simula fallo en primer intento y éxito en segundo.
-    Cada reintento abre una nueva conexión SMTP, por eso
-    configuramos el side_effect sobre la clase (cada __enter__
-    devuelve una instancia nueva con su propio sendmail).
+    Cada reintento abre una nueva conexión SMTP (with smtplib.SMTP(...)),
+    por eso la factory crea una instancia nueva por llamada.
     """
     call_count = {"n": 0}
 

@@ -28,8 +28,8 @@ def reset_app_state():
 
 
 def _make_daemon(**kwargs) -> PEIDaemon:
-    bot = kwargs.pop("bot", mock.MagicMock())
-    email = kwargs.pop("email", mock.MagicMock())
+    bot   = kwargs.pop("bot",   mock.MagicMock())
+    email = kwargs.pop("email", mock.MagicMock())  # puede ser None si el test lo pide
     afiliacion = kwargs.pop("afiliacion", mock.MagicMock())
     afiliacion.gssi      = "36001"
     afiliacion.scan_list = "ListaScan1"
@@ -57,7 +57,8 @@ def _make_daemon(**kwargs) -> PEIDaemon:
     defaults.update(kwargs)
     d = PEIDaemon(**defaults)
     d.bot.reset_mock()
-    d.email.reset_mock()
+    if d.email is not None:
+        d.email.reset_mock()
     return d
 
 
@@ -75,8 +76,6 @@ def test_set_radio_connected_true_notifica_email(daemon):
     daemon._set_radio_connected(True)
     daemon.email.notificar_radio_conectada.assert_called_once()
     daemon.email.notificar_radio_desconectada.assert_not_called()
-    # Telegram NO debe recibir notificaciones de sistema
-    daemon.bot.notificar_radio_conectada = mock.MagicMock()  # asegurar que no existe o no se llama
 
 
 def test_set_radio_connected_false_notifica_email(daemon):
