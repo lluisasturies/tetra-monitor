@@ -6,12 +6,25 @@ from core.logger import logger
 
 class KeywordFilter:
     def __init__(self, filepath: str = "config/keywords.yaml"):
-        if not os.path.exists(filepath):
-            raise FileNotFoundError(f"No se encontró el archivo {filepath}")
         self._filepath = Path(filepath)
         self._last_mtime: float = 0.0
         self.keywords: list[str] = []
+        if not self._filepath.exists():
+            logger.warning(
+                f"[KeywordFilter] {self._filepath} no existe — creando vacío"
+            )
+            self._create_empty()
         self._load()
+
+    def _create_empty(self):
+        """Crea un keywords.yaml vacío para que el daemon pueda arrancar."""
+        try:
+            self._filepath.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._filepath, "w") as f:
+                yaml.safe_dump({"keywords": []}, f)
+            logger.info(f"[KeywordFilter] Creado {self._filepath} vacío")
+        except Exception as e:
+            logger.error(f"[KeywordFilter] No se pudo crear {self._filepath}: {e}")
 
     def _load(self):
         try:
