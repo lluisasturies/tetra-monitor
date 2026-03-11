@@ -37,7 +37,7 @@ CORS_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()] or ["http:
 
 
 # ------------------------------------------------------------------
-# Startup autónomo
+# Startup autonomo
 # ------------------------------------------------------------------
 
 def _init_standalone():
@@ -88,7 +88,7 @@ def _init_standalone():
 
     # Nota: keyword_filter NO se inicializa en modo standalone.
     # app_state.keyword_filter lo establece el daemon PEI al arrancar.
-    # Los endpoints /keywords devolverán 503 hasta que el daemon esté activo.
+    # Los endpoints /keywords devolveran 503 hasta que el daemon este activo.
 
     grupos_db.seed_from_yaml(GRUPOS_PATH)
     logger.info("[API standalone] Dependencias inicializadas correctamente")
@@ -125,29 +125,25 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 def _safe_username(username: str) -> str:
     cleaned = username[:32]
-    return cleaned if len(username) <= 32 else cleaned + "…"
+    return cleaned if len(username) <= 32 else cleaned + "..."
 
 def _require_llamadas():
     if app_state.llamadas is None:
-        raise HTTPException(status_code=503, detail="Servicio no disponible aún")
+        raise HTTPException(status_code=503, detail="Servicio no disponible aun")
 
 def _require_afiliacion():
     if app_state.afiliacion is None:
-        raise HTTPException(status_code=503, detail="Servicio no disponible aún")
+        raise HTTPException(status_code=503, detail="Servicio no disponible aun")
 
 def _require_grupos():
     if app_state.grupos is None:
-        raise HTTPException(status_code=503, detail="Servicio no disponible aún")
+        raise HTTPException(status_code=503, detail="Servicio no disponible aun")
 
 def _require_keywords():
-    """
-    keyword_filter lo establece el daemon PEI, no _init_standalone.
-    Devuelve 503 con mensaje descriptivo si el daemon aún no ha arrancado.
-    """
     if app_state.keyword_filter is None:
         raise HTTPException(
             status_code=503,
-            detail="El filtro de keywords no está disponible. El daemon PEI debe estar activo.",
+            detail="El filtro de keywords no esta disponible. El daemon PEI debe estar activo.",
         )
 
 
@@ -170,7 +166,7 @@ def _get_db_metrics() -> dict:
             app_state.pool.putconn(conn)
         return {"calls_today": calls_today, "last_call_at": last_call_at}
     except Exception as e:
-        logger.warning(f"[health] No se pudieron obtener métricas de BD: {e}")
+        logger.warning(f"[health] No se pudieron obtener metricas de BD: {e}")
         return {"calls_today": None, "last_call_at": None}
 
 
@@ -197,11 +193,11 @@ def verify_token(token: str = Depends(oauth2_scheme)):
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user = payload.get("sub")
         if not user:
-            raise HTTPException(status_code=401, detail="Token inválido")
+            raise HTTPException(status_code=401, detail="Token invalido")
         return user
     except JWTError:
-        logger.warning("Intento de acceso con token JWT inválido o expirado")
-        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+        logger.warning("Intento de acceso con token JWT invalido o expirado")
+        raise HTTPException(status_code=401, detail="Token invalido o expirado")
 
 
 # ------------------------------------------------------------------
@@ -261,8 +257,6 @@ def health(request: Request):
         "calls_today":  metrics["calls_today"],
         "last_call_at": metrics["last_call_at"],
     }
-    # 503 cuando degraded para que los monitores externos detecten el problema
-    # sin tener que parsear el cuerpo JSON
     http_status = 503 if degraded else 200
     return JSONResponse(content=body, status_code=http_status)
 
@@ -293,8 +287,8 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
 @limiter.limit("10/minute")
 def refresh(request: Request, body: RefreshRequest):
     if body.refresh_token not in app_state.refresh_tokens:
-        logger.warning("Intento de refresh con token inválido o ya usado")
-        raise HTTPException(status_code=401, detail="Refresh token inválido o expirado")
+        logger.warning("Intento de refresh con token invalido o ya usado")
+        raise HTTPException(status_code=401, detail="Refresh token invalido o expirado")
     app_state.refresh_tokens.discard(body.refresh_token)
     new_refresh  = create_refresh_token()
     access_token = create_access_token(API_USER)
@@ -311,7 +305,7 @@ def refresh(request: Request, body: RefreshRequest):
 @limiter.limit("10/minute")
 def logout(request: Request, body: RefreshRequest):
     app_state.refresh_tokens.discard(body.refresh_token)
-    logger.info("Sesión cerrada correctamente")
+    logger.info("Sesion cerrada correctamente")
     return {"status": "ok"}
 
 
@@ -323,11 +317,11 @@ def logout(request: Request, body: RefreshRequest):
 @limiter.limit("60/minute")
 def listar_llamadas(
     request: Request,
-    limit:  int      = Query(default=50,   ge=1, le=500, description="Resultados por página"),
-    offset: int      = Query(default=0,    ge=0,         description="Desplazamiento para paginación"),
+    limit:  int      = Query(default=50,   ge=1, le=500, description="Resultados por pagina"),
+    offset: int      = Query(default=0,    ge=0,         description="Desplazamiento para paginacion"),
     gssi:   int|None = Query(default=None,               description="Filtrar por GSSI (grupo)"),
     ssi:    int|None = Query(default=None,               description="Filtrar por SSI (emisor)"),
-    texto:  str|None = Query(default=None,               description="Buscar en transcripción (contiene)"),
+    texto:  str|None = Query(default=None,               description="Buscar en transcripcion (contiene)"),
 ):
     _require_llamadas()
     rows, total = app_state.llamadas.listar_filtrado(
@@ -358,25 +352,17 @@ def llamada_detalle(request: Request, llamada_id: int):
 @app.get("/keywords", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def listar_keywords(request: Request):
-    """
-    Devuelve la lista actual de keywords activas.
-    Requiere que el daemon PEI esté activo (devuelve 503 en caso contrario).
-    """
     _require_keywords()
     return {"keywords": app_state.keyword_filter.keywords}
 
 
 @app.post("/keywords", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
-def añadir_keyword(request: Request, body: KeywordAdd):
-    """
-    Añade una keyword con recarga en caliente. Devuelve 409 si ya existe.
-    Requiere que el daemon PEI esté activo (devuelve 503 en caso contrario).
-    """
+def anadir_keyword(request: Request, body: KeywordAdd):
     _require_keywords()
     kw = body.keyword.strip()
     if not kw:
-        raise HTTPException(status_code=422, detail="La keyword no puede estar vacía")
+        raise HTTPException(status_code=422, detail="La keyword no puede estar vacia")
     added = app_state.keyword_filter.add(kw)
     if not added:
         raise HTTPException(status_code=409, detail=f"La keyword '{kw.lower()}' ya existe")
@@ -386,10 +372,6 @@ def añadir_keyword(request: Request, body: KeywordAdd):
 @app.delete("/keywords/{keyword}", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
 def eliminar_keyword(request: Request, keyword: str):
-    """
-    Elimina una keyword con recarga en caliente. Devuelve 404 si no existe.
-    Requiere que el daemon PEI esté activo (devuelve 503 en caso contrario).
-    """
     _require_keywords()
     removed = app_state.keyword_filter.remove(keyword)
     if not removed:
@@ -398,7 +380,7 @@ def eliminar_keyword(request: Request, keyword: str):
 
 
 # ------------------------------------------------------------------
-# Afiliación
+# Afiliacion
 # ------------------------------------------------------------------
 
 @app.get("/afiliacion", dependencies=[Depends(verify_token)])

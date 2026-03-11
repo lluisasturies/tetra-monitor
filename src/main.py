@@ -24,10 +24,10 @@ from streaming import create_streamer  # noqa: E402
 from app_state import app_state  # noqa: E402
 
 print()
-print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀▀░░░░░█▄█░█▀▀░█▀▀░▀█▀░▀█▀░█▀▀░█▀▄")
-print("░░█░░█▀▀░░█░░█▀▄░█▀▀░▄▄▄░█░█░█░░░█░█░░█░░░█░░█░█░█▀▄")
-print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀▀▀░▀▀▀░░▀░░▀▀▀░▀░▀")
-print("2026 © Lluis de la Rubia / LluisAsturies")
+print("\u2591\u25c0\u2588\u2588\u2588\u2591\u2588\u2588\u2588\u2591\u25c0\u2588\u2588\u2588\u2591\u2588\u2588\u2584\u2591\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2588\u2584\u2588\u2591\u2588\u2588\u2588\u2591\u2588\u2588\u2588\u2591\u25c0\u2588\u2588\u2588\u2591\u25c0\u2588\u2588\u2588\u2591\u2588\u2588\u2588\u2591\u2588\u2588\u2584")
+print("\u2591\u2591\u2588\u2591\u2591\u2588\u2588\u2588\u2591\u2591\u2588\u2591\u2591\u2588\u2584\u2588\u2591\u2591\u2588\u2588\u2588\u2591\u25c4\u25c4\u25c4\u2591\u2588\u2591\u2588\u2591\u2588\u2591\u2591\u2591\u2591\u2588\u2591\u2588\u2591\u2591\u2588\u2591\u2591\u2591\u2588\u2591\u2591\u2591\u2588\u2591\u2588\u2591\u2588\u2591\u2588\u2584\u2588")
+print("\u2591\u2591\u25c0\u2591\u2591\u25c0\u25c0\u25c0\u2591\u2591\u25c0\u2591\u2591\u25c0\u2591\u25c0\u2591\u25c0\u2591\u25c0\u2591\u2591\u2591\u2591\u2591\u25c0\u2591\u25c0\u2591\u25c0\u25c0\u25c0\u2591\u25c0\u25c0\u25c0\u2591\u25c0\u25c0\u25c0\u2591\u2591\u25c0\u2591\u2591\u25c0\u25c0\u25c0\u2591\u25c0\u2591\u25c0")
+print("2026 (c) Lluis de la Rubia / LluisAsturies")
 print()
 
 PROJECT_ROOT    = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -49,9 +49,9 @@ def _load_config() -> dict:
     try:
         with open(CONFIG_PATH, "r") as f:
             cfg = yaml.safe_load(f)
-        logger.info("Configuración cargada correctamente")
+        logger.info("Configuracion cargada correctamente")
     except FileNotFoundError:
-        logger.critical(f"No se encontró config.yaml en {CONFIG_PATH}")
+        logger.critical(f"No se encontro config.yaml en {CONFIG_PATH}")
         sys.exit(1)
     except yaml.YAMLError as e:
         logger.critical(f"Error parseando config.yaml: {e}")
@@ -61,8 +61,9 @@ def _load_config() -> dict:
 
 
 def _validate_env(cfg: dict) -> dict:
-    telegram_enabled = cfg["telegram"].get("enabled", True)
-    email_enabled    = cfg.get("email", {}).get("enabled", False)
+    features         = cfg.get("features", {})
+    telegram_enabled = features.get("telegram_enabled", True)
+    email_enabled    = features.get("email_enabled", False)
     errors = []
 
     if not os.getenv("DB_USER"):
@@ -75,7 +76,7 @@ def _validate_env(cfg: dict) -> dict:
         errors.append("API_USER")
     if not os.getenv("API_PASSWORD_HASH"):
         if os.getenv("API_PASSWORD"):
-            logger.critical("API_PASSWORD ya no se usa — ejecuta 'make set-password' para migrar")
+            logger.critical("API_PASSWORD ya no se usa -- ejecuta 'make set-password' para migrar")
         else:
             errors.append("API_PASSWORD_HASH")
     if telegram_enabled:
@@ -122,17 +123,19 @@ def _init_db(cfg: dict, env: dict) -> tuple[DBPool, LlamadasDB, GruposDB]:
 
 
 def _init_bot(cfg: dict, env: dict) -> TelegramBot:
+    features = cfg.get("features", {})
     bot = TelegramBot(
         token=env["telegram_token"],
         chat_id=env["telegram_chat_id"],
-        enabled=cfg["telegram"].get("enabled", True),
-        alerts=cfg["telegram"].get("alerts", {}),
+        enabled=features.get("telegram_enabled", True),
+        alerts=cfg.get("telegram", {}).get("alerts", {}),
     )
     app_state.bot = bot
     return bot
 
 
 def _init_email(cfg: dict, env: dict) -> EmailNotifier:
+    features  = cfg.get("features", {})
     email_cfg = cfg.get("email", {})
     to_raw    = email_cfg.get("to", "")
     to        = [t.strip() for t in to_raw.split(",") if t.strip()] if isinstance(to_raw, str) else to_raw
@@ -143,7 +146,7 @@ def _init_email(cfg: dict, env: dict) -> EmailNotifier:
         password=env["email_password"],
         to=to,
         use_tls=email_cfg.get("use_tls", True),
-        enabled=email_cfg.get("enabled", False),
+        enabled=features.get("email_enabled", False),
         alerts=email_cfg.get("alerts", {}),
     )
     app_state.email = notifier
@@ -177,6 +180,7 @@ def _init_pei(
     llamadas_db: LlamadasDB, afiliacion: AfiliacionConfig, bot: TelegramBot,
     email: EmailNotifier, audio_output_dir: str,
 ) -> PEIDaemon:
+    features = cfg.get("features", {})
     return PEIDaemon(
         motorola_pei_cls=MotorolaPEI,
         audio_buffer=audio_buffer,
@@ -190,9 +194,9 @@ def _init_pei(
         baudrate=cfg["pei"]["baudrate"],
         audio_output_dir=audio_output_dir,
         retention_days=cfg["audio"].get("retention_days", 7),
-        recording_enabled=cfg["audio"].get("recording_enabled", True),
-        processing_enabled=cfg["pei"].get("processing_enabled", True),
-        save_all_calls=cfg["database"].get("save_all_calls", False),
+        recording_enabled=features.get("recording_enabled", True),
+        processing_enabled=features.get("processing_enabled", True),
+        save_all_calls=features.get("save_all_calls", False),
         watchdog_timeout=cfg["pei"].get("watchdog_timeout", 60),
         max_recording_seconds=cfg["audio"].get("max_recording_seconds", 120),
     )
@@ -215,8 +219,9 @@ def _init_api(cfg: dict) -> threading.Thread:
 
 
 def _init_streaming(cfg: dict) -> object | None:
+    features   = cfg.get("features", {})
     stream_cfg = cfg.get("streaming", {})
-    if not stream_cfg.get("enabled", False):
+    if not features.get("streaming_enabled", False):
         app_state.streaming_active = False
         return None
     stream_cfg["samplerate"] = cfg["audio"]["sample_rate"]
@@ -227,8 +232,10 @@ def _init_streaming(cfg: dict) -> object | None:
 
 
 def main():
-    cfg = _load_config()
-    env = _validate_env(cfg)
+    cfg      = _load_config()
+    env      = _validate_env(cfg)
+    features = cfg.get("features", {})
+
     audio_output_dir = os.path.join(PROJECT_ROOT, cfg["audio"].get("output_dir", "data/audio"))
 
     afiliacion = AfiliacionConfig(AFILIACION_PATH)
@@ -243,30 +250,30 @@ def main():
         cfg, audio_buffer, stt, kf, llamadas_db, afiliacion, bot, email, audio_output_dir
     )
 
-    streaming_enabled  = cfg.get("streaming", {}).get("enabled", False)
-    recording_enabled  = cfg["audio"].get("recording_enabled", True)
-    processing_enabled = cfg["pei"].get("processing_enabled", True)
-    telegram_enabled   = cfg["telegram"].get("enabled", True)
-    email_enabled      = cfg.get("email", {}).get("enabled", False)
-    save_all_calls     = cfg["database"].get("save_all_calls", False)
+    streaming_enabled  = features.get("streaming_enabled", False)
+    recording_enabled  = features.get("recording_enabled", True)
+    processing_enabled = features.get("processing_enabled", True)
+    telegram_enabled   = features.get("telegram_enabled", True)
+    email_enabled      = features.get("email_enabled", False)
+    save_all_calls     = features.get("save_all_calls", False)
     watchdog_timeout   = cfg["pei"].get("watchdog_timeout", 60)
     max_rec_seconds    = cfg["audio"].get("max_recording_seconds", 120)
 
-    logger.info(f"Grabación de audio       : {'ACTIVADA'  if recording_enabled  else 'DESACTIVADA'}")
+    logger.info(f"Grabacion de audio       : {'ACTIVADA'  if recording_enabled  else 'DESACTIVADA'}")
     logger.info(f"Procesado PEI            : {'ACTIVADO'  if processing_enabled else 'DESACTIVADO'}")
     logger.info(f"Telegram                 : {'ACTIVADO'  if telegram_enabled   else 'DESACTIVADO'}")
     logger.info(f"Email                    : {'ACTIVADO'  if email_enabled      else 'DESACTIVADO'}")
     logger.info(f"Streaming                : {'ACTIVADO'  if streaming_enabled  else 'DESACTIVADO'}")
     logger.info(f"Guardado en BD           : {'TODAS las llamadas' if save_all_calls else 'Solo con keyword'}")
     logger.info(f"Watchdog PEI             : {watchdog_timeout}s (0=desactivado)")
-    logger.info(f"Límite grabación         : {max_rec_seconds}s (0=desactivado)")
+    logger.info(f"Limite grabacion         : {max_rec_seconds}s (0=desactivado)")
 
     _init_api(cfg)
     streamer = _init_streaming(cfg)
     email.notificar_startup()
 
     def _signal_handler(sig, frame):
-        logger.info("Señal de interrupción recibida, cerrando aplicación...")
+        logger.info("Senal de interrupcion recibida, cerrando aplicacion...")
         email.notificar_shutdown()
         app_state.streaming_active = False
         pei_daemon.shutdown(streamer)
@@ -287,7 +294,7 @@ def main():
         logger.critical(f"Error en PEI: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
-        logger.info("Interrupción por teclado recibida")
+        logger.info("Interrupcion por teclado recibida")
         email.notificar_shutdown()
         app_state.streaming_active = False
         pei_daemon.shutdown(streamer)

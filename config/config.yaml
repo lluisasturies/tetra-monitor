@@ -1,61 +1,6 @@
-pei:
-  port: "/dev/ttyUSB0"
-  baudrate: 9600
-  processing_enabled: true   # false → ignora eventos PEI (no graba ni transcribe)
-  watchdog_timeout: 60       # segundos sin eventos antes de reconectar (0 = desactivado)
-
-audio:
-  device_index: 1
-  sample_rate: 16000
-  channels: 1
-  prebuffer_seconds: 5
-  output_dir: "data/audio"
-  retention_days: 7
-  recording_enabled: true    # false → no guarda ficheros de audio en disco
-  max_recording_seconds: 120 # corte automático si PTT_END no llega (0 = desactivado)
-
-streaming:
-  enabled: true
-  rtmp_url: rtmp://localhost/live/tetra
-#  icecast_url: icecast://source:password@localhost:8000/tetra
-
-stt:
-  model: "base"     # tiny/base en RPi, small/medium si hay más RAM
-  language: "es"
-  fp16: false       # false obligatorio en RPi (CPU ARM); true solo con GPU compatible
-
-database:
-  host: "localhost"
-  port: 5432
-  dbname: "tetra"
-  # true  → guarda todas las llamadas en BD (con y sin keyword)
-  # false → guarda solo las que contienen alguna palabra clave
-  save_all_calls: false
-
-api:
-  host: "0.0.0.0"
-  port: 8000
-
-telegram:
-  enabled: true     # false → desactiva Telegram completamente
-  alerts:
-    relevant_calls: true          # Notificar llamadas con keyword detectada
-    afiliacion_changed: true      # Notificar cambios de GSSI o scan list
-
-email:
-  enabled: false                  # false → desactiva email completamente
-  smtp_host: "smtp.gmail.com"
-  smtp_port: 587
-  use_tls: true                   # STARTTLS (recomendado). false → sin cifrado
-  to: "admin@example.com"         # Destinatario (puede ser lista separada por comas)
-  alerts:
-    startup: true                 # Email cuando la aplicación arranca
-    shutdown: true                # Email cuando la aplicación se cierra
-    radio_disconnected: true      # Email cuando la radio se desconecta
-    # radio_connected: false      # Descomentado si quieres también reconexiones
-
-logging:
-  level: INFO       # INFO, WARNING, ERROR, CRITICAL
-  console: true
-  max_mb: 10        # Tamaño máximo de cada fichero de log en MB
-  backup_count: 10  # Número de ficheros de log a conservar
+# Este fichero esta ignorado por Git y no se versiona.
+# Copia config.example.yaml y renombralo a config.yaml para empezar:
+#
+#   cp config/config.example.yaml config/config.yaml
+#
+# A continuacion edita config.yaml con tus valores reales.

@@ -5,6 +5,9 @@ venv/
 # Variables de entorno
 .env
 
+# Configuracion local (usa config/config.example.yaml como base)
+config/config.yaml
+
 # Grabaciones de audio
 data/audio/
 
@@ -18,7 +21,7 @@ __pycache__/
 *.pyd
 .Python
 
-# Whisper — modelos descargados en caché
+# Whisper - modelos descargados en cache
 ~/.cache/whisper/
 
 # IDEs

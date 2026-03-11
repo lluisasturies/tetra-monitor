@@ -1,0 +1,93 @@
+# ============================================================
+# LOGGING
+# ============================================================
+logging:
+  level: INFO           # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  console: true
+  max_mb: 10            # Tamano maximo de cada fichero de log en MB
+  backup_count: 10      # Numero de ficheros de log a conservar
+
+# ============================================================
+# HARDWARE - Interfaz PEI con la radio Motorola
+# ============================================================
+pei:
+  port: "/dev/ttyUSB0"
+  baudrate: 9600
+  watchdog_timeout: 60  # segundos sin eventos antes de reconectar (0 = desactivado)
+
+# ============================================================
+# AUDIO - Captura y almacenamiento
+# ============================================================
+audio:
+  device_index: 1
+  sample_rate: 16000
+  channels: 1
+  prebuffer_seconds: 5
+  output_dir: "data/audio"
+  retention_days: 7
+  max_recording_seconds: 120  # corte automatico si PTT_END no llega (0 = desactivado)
+
+# ============================================================
+# STT - Transcripcion de voz a texto
+# ============================================================
+stt:
+  model: "base"    # tiny/base en RPi, small/medium si hay mas RAM
+  language: "es"
+  fp16: false      # false obligatorio en RPi (CPU ARM); true solo con GPU compatible
+
+# ============================================================
+# DATABASE - Persistencia
+# ============================================================
+database:
+  host: "localhost"
+  port: 5432
+  dbname: "tetra"
+
+# ============================================================
+# API - Interfaz REST
+# ============================================================
+api:
+  host: "0.0.0.0"
+  port: 8000
+
+# ============================================================
+# STREAMING - Emision de audio en vivo
+# Solo se puede activar uno a la vez. Descomenta el que uses
+# y comenta el otro. RTMP tiene prioridad si ambos estan activos.
+# ============================================================
+streaming:
+  bitrate: "128k"
+  rtmp_url: "rtmp://localhost/live/tetra"
+  # icecast_url: "icecast://source:password@localhost:8000/tetra"
+
+# ============================================================
+# TELEGRAM - Notificaciones
+# ============================================================
+telegram:
+  alerts:
+    relevant_calls: true      # Notificar llamadas con keyword detectada
+    afiliacion_changed: true  # Notificar cambios de GSSI o scan list
+
+# ============================================================
+# EMAIL - Notificaciones
+# ============================================================
+email:
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  use_tls: true               # STARTTLS (recomendado). false = sin cifrado
+  to: "admin@example.com"     # Destinatario (puede ser lista separada por comas)
+  alerts:
+    startup: true             # Email cuando la aplicacion arranca
+    shutdown: true            # Email cuando la aplicacion se cierra
+    radio_disconnected: true  # Email cuando la radio se desconecta
+
+# ============================================================
+# FEATURES - Activar/desactivar funcionalidades
+# ============================================================
+features:
+  processing_enabled: true   # false -> ignora eventos PEI (no graba ni transcribe)
+  recording_enabled: true    # false -> no guarda ficheros de audio en disco
+  streaming_enabled: true    # false -> no emite audio en tiempo real
+  save_all_calls: false      # true  -> guarda todas las llamadas (sin keyword tambien)
+  telegram_enabled: true     # false -> no envia alertas por Telegram
+  email_enabled: false       # true  -> envia notificaciones por email
