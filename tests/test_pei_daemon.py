@@ -211,17 +211,20 @@ def test_ptt_end_limpia_recording_start_time():
 
 
 def test_abort_recording_descarta_grabacion_activa():
+    """_abort_recording debe llamar abort_recording() en el buffer, no stop_recording()."""
     d = _make_daemon()
     d._recording_start_time = time.monotonic()
     d._abort_recording()
     assert d._recording_start_time is None
-    d.audio_buffer.stop_recording.assert_called_once()
+    d.audio_buffer.abort_recording.assert_called_once()
+    d.audio_buffer.stop_recording.assert_not_called()
 
 
 def test_abort_recording_no_actua_si_no_grabando():
     d = _make_daemon()
     d._recording_start_time = None
     d._abort_recording()
+    d.audio_buffer.abort_recording.assert_not_called()
     d.audio_buffer.stop_recording.assert_not_called()
 
 
