@@ -1,6 +1,6 @@
 # Este fichero esta ignorado por Git y no se versiona.
-# Copia config.example.yaml y renombralo a config.yaml para empezar:
+# Copia config.yaml.example y renombralo a config.yaml para empezar:
 #
-#   cp config/config.example.yaml config/config.yaml
+#   cp config/config.yaml.example config/config.yaml
 #
 # A continuacion edita config.yaml con tus valores reales.
