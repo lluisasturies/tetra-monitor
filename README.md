@@ -10,7 +10,7 @@ Sistema de monitorización de redes TETRA sobre Raspberry Pi. Escucha eventos PT
 * 📡 **Captura de eventos TETRA** — Motorola PEI (AT commands sobre serie)
 * 🖥️ **Grabación de audio** — `sounddevice` + `soundfile`
 * 🗣️ **Speech-to-Text** — OpenAI Whisper
-* 📲 **Notificaciones** — Telegram Bot API
+* 📲 **Notificaciones** — Telegram Bot API + Email (SMTP)
 * 🗄️ **PostgreSQL** — almacenamiento de llamadas, catálogo de grupos y scan lists
 * 🎧 **Streaming de audio** — Icecast o RTMP
 * 🔗 **API REST** — FastAPI con autenticación JWT + rate limiting
@@ -56,6 +56,14 @@ cd tetra-monitor
 
 ### 2. Crear el fichero de configuración
 ```bash
+cp config/config.yaml.example config/config.yaml
+nano config/config.yaml
+```
+
+Ajusta los valores según tu entorno. El fichero `config/config.yaml` está en `.gitignore` y nunca se versiona.
+
+### 3. Crear el fichero de entorno
+```bash
 cp .env.example .env
 nano .env
 ```
@@ -76,21 +84,22 @@ API_USER=admin
 API_PASSWORD_HASH=$2b$12$...
 ```
 
-> `TELEGRAM_TOKEN` y `TELEGRAM_CHAT_ID` solo son obligatorias si `telegram.enabled: true` en `config.yaml`.
+> `TELEGRAM_TOKEN` y `TELEGRAM_CHAT_ID` solo son obligatorias si `features.telegram_enabled: true` en `config.yaml`.
+> `EMAIL_USER` y `EMAIL_PASSWORD` solo son obligatorias si `features.email_enabled: true` en `config.yaml`.
 
-### 3. Ejecutar el setup
+### 4. Ejecutar el setup
 El script instala automáticamente Python, PostgreSQL, ffmpeg y las dependencias Python, pre-descarga el modelo Whisper y aplica el schema de base de datos. Al final pregunta si instalar HTTPS con nginx:
 ```bash
 make setup
 ```
 
-### 4. Configurar la contraseña de la API
+### 5. Configurar la contraseña de la API
 ```bash
 make set-password
 ```
 El script pide la contraseña dos veces, genera el hash bcrypt y lo escribe directamente en `.env`.
 
-### 5. (Opcional) Personalizar el catálogo de grupos
+### 6. (Opcional) Personalizar el catálogo de grupos
 Edita `config/grupos.yaml` antes del primer arranque para definir los GSSIs y scan lists de tu red. En el primer arranque se cargan automáticamente en la BD. A partir de entonces el catálogo se gestiona directamente desde la BD (vía API o con `make reload-grupos`).
 
 ```yaml
@@ -180,14 +189,16 @@ make stop       # parar
 ---
 
 ## Flags de activación
-Los siguientes componentes pueden activarse y desactivarse desde `config/config.yaml` sin tocar el código:
+Todos los flags de activación están centralizados en la sección `features` de `config/config.yaml`:
 
-| Flag | Sección | Efecto si `false` |
-|---|---|---|
-| `recording_enabled` | `audio` | No graba ficheros de audio en disco |
-| `processing_enabled` | `pei` | Ignora todos los eventos PEI |
-| `enabled` | `telegram` | No envía alertas por Telegram |
-| `enabled` | `streaming` | No inicia el streaming de audio |
+| Flag | Efecto si `false` |
+|---|---|
+| `features.recording_enabled` | No graba ficheros de audio en disco |
+| `features.processing_enabled` | Ignora todos los eventos PEI |
+| `features.streaming_enabled` | No inicia el streaming de audio |
+| `features.save_all_calls` | Solo guarda llamadas con keyword detectada |
+| `features.telegram_enabled` | No envía alertas por Telegram |
+| `features.email_enabled` | No envía notificaciones por email |
 
 ---
 
@@ -219,12 +230,20 @@ Respuesta:
 | `POST` | `/auth/logout` | No | Invalidar refresh token |
 | `GET` | `/calls` | Sí | Listar llamadas (params: `limit`, `offset`, `gssi`, `ssi`, `texto`) |
 | `GET` | `/calls/{id}` | Sí | Detalle de una llamada |
+| `GET` | `/keywords` | Sí | Listar keywords activas |
+| `POST` | `/keywords` | Sí | Añadir keyword con recarga en caliente |
+| `DELETE` | `/keywords/{keyword}` | Sí | Eliminar keyword con recarga en caliente |
 | `GET` | `/afiliacion` | Sí | Ver GSSI y scan list activos en el radio |
 | `POST` | `/afiliacion/gssi` | Sí | Cambiar GSSI activo en el radio |
 | `POST` | `/afiliacion/scan-list` | Sí | Cambiar scan list activa en el radio |
 | `GET` | `/groups` | Sí | Listar catálogo de grupos (param: `solo_activos`) |
 | `GET` | `/groups/{gssi}` | Sí | Detalle de un grupo |
 | `POST` | `/groups` | Sí | Crear o actualizar un grupo (upsert) |
+| `GET` | `/folders` | Sí | Listar carpetas con grupos anidados |
+| `GET` | `/folders/{id}` | Sí | Detalle de una carpeta |
+| `POST` | `/folders` | Sí | Crear o actualizar una carpeta |
+| `PUT` | `/folders/{id}/groups` | Sí | Reemplazar grupos de una carpeta |
+| `DELETE` | `/folders/{id}` | Sí | Eliminar una carpeta |
 | `GET` | `/scan-lists` | Sí | Listar scan lists con sus grupos |
 
 ---
