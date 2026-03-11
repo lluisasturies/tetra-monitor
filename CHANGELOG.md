@@ -10,6 +10,41 @@ Versionado según [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [1.2.0] - 2026-03-11
+
+### Added
+- `EmailNotifier` (`src/integrations/email_notifier.py`): notificaciones SMTP para eventos de sistema (startup, shutdown, radio_disconnected, radio_connected)
+- Sección `email:` en `config.yaml` con flags configurables por evento y soporte STARTTLS
+- Variables de entorno `EMAIL_USER` y `EMAIL_PASSWORD` para credenciales SMTP
+- `.env.example` con todas las variables necesarias documentadas
+- Endpoint `GET /keywords`: lista keywords activas
+- Endpoint `POST /keywords`: añade keyword con recarga en caliente
+- Endpoint `DELETE /keywords/{keyword}`: elimina keyword con recarga en caliente
+- Watchdog del daemon PEI: hilo separado que detecta inactividad y solicita reconexion
+- Límite de duración de grabación (`max_recording_seconds`): corte automático si PTT_END no llega
+- Flag `relevant_calls` en `telegram.alerts` para desactivar notificaciones de llamadas con keyword
+- `_stream_queue` en `AudioBuffer` con `maxsize` acotado (160 chunks, ~10s) para evitar crecimiento ilimitado de RAM
+- `KeywordFilter` crea `keywords.yaml` vacío automáticamente si no existe al arrancar
+
+### Changed
+- Telegram queda solo para eventos operativos: llamadas con keyword y cambios de afiliación
+- Eventos de sistema (startup, shutdown, radio_disconnected) migrados a `EmailNotifier`
+- `/health` devuelve HTTP 503 cuando `status == "degraded"` (antes siempre 200)
+- `shutdown()` del daemon PEI no dispara alerta de radio desconectada (apagado voluntario)
+- `datetime.utcnow()` reemplazado por `datetime.now(timezone.utc)` (deprecated en Python 3.12+)
+
+### Fixed
+- `smtp_mock` en tests parchaba `smtplib.SMTP` globalmente en vez de en el namespace correcto
+- `test_reintento_en_error_transitorio`: cada reintento SMTP abre una conexión nueva, el test ahora lo refleja correctamente
+- `reset_mock()` condicional en `_make_daemon` cuando `email=None`
+- Subject con caracteres Unicode codificado en quoted-printable: tests ahora decodifican antes de comparar
+
+### Removed / Cleaned
+- `TelegramBot`: eliminados `notificar_startup`, `notificar_shutdown`, `notificar_radio_conectada`, `notificar_radio_desconectada` (movidos a `EmailNotifier`)
+- `core/database.py`, `core/radio_config.py`, `core/scan_config.py`: ficheros vestigio vaciados
+
+---
+
 ## [1.1.0] - 2026-03-10
 
 ### Added
