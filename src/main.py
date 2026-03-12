@@ -18,6 +18,7 @@ from integrations.email_notifier import EmailNotifier  # noqa: E402
 from db.pool import DBPool  # noqa: E402
 from db.llamadas import LlamadasDB  # noqa: E402
 from db.grupos import GruposDB  # noqa: E402
+from db.usuarios import UsuariosDB  # noqa: E402
 from pei.hardware.pei_motorola import MotorolaPEI  # noqa: E402
 from pei.daemon.pei_daemon import PEIDaemon  # noqa: E402
 from streaming import create_streamer  # noqa: E402
@@ -72,13 +73,6 @@ def _validate_env(cfg: dict) -> dict:
         errors.append("DB_PASSWORD")
     if not os.getenv("JWT_SECRET"):
         errors.append("JWT_SECRET")
-    if not os.getenv("API_USER"):
-        errors.append("API_USER")
-    if not os.getenv("API_PASSWORD_HASH"):
-        if os.getenv("API_PASSWORD"):
-            logger.critical("API_PASSWORD ya no se usa -- ejecuta 'make set-password' para migrar")
-        else:
-            errors.append("API_PASSWORD_HASH")
     if telegram_enabled:
         if not os.getenv("TELEGRAM_TOKEN"):
             errors.append("TELEGRAM_TOKEN")
@@ -105,7 +99,7 @@ def _validate_env(cfg: dict) -> dict:
     }
 
 
-def _init_db(cfg: dict, env: dict) -> tuple[DBPool, LlamadasDB, GruposDB]:
+def _init_db(cfg: dict, env: dict) -> tuple[DBPool, LlamadasDB, GruposDB, UsuariosDB]:
     pool = DBPool(
         host=cfg["database"]["host"],
         port=cfg["database"]["port"],
@@ -115,11 +109,27 @@ def _init_db(cfg: dict, env: dict) -> tuple[DBPool, LlamadasDB, GruposDB]:
     )
     llamadas_db = LlamadasDB(pool)
     grupos_db   = GruposDB(pool)
+    usuarios_db = UsuariosDB(pool)
+
     app_state.pool     = pool
     app_state.llamadas = llamadas_db
     app_state.grupos   = grupos_db
+    app_state.usuarios = usuarios_db
+
     grupos_db.seed_from_yaml(GRUPOS_PATH)
-    return pool, llamadas_db, grupos_db
+
+    # Crear usuario admin inicial desde .env si la tabla esta vacia
+    api_user = os.getenv("API_USER", "")
+    api_hash = os.getenv("API_PASSWORD_HASH", "")
+    if api_user and api_hash:
+        usuarios_db.seed_admin_desde_env(api_user, api_hash)
+    else:
+        logger.warning(
+            "[main] API_USER / API_PASSWORD_HASH no definidos en .env. "
+            "El primer usuario admin debe crearse manualmente via POST /users."
+        )
+
+    return pool, llamadas_db, grupos_db, usuarios_db
 
 
 def _init_bot(cfg: dict, env: dict) -> TelegramBot:
@@ -232,9 +242,6 @@ def _init_streaming(cfg: dict) -> object | None:
     streamer = create_streamer(stream_cfg)
 
     if streamer is None:
-        # streaming_enabled=true pero ninguna URL definida (o credenciales Zello
-        # ausentes). Avisamos explicitamente para no dejar al usuario preguntandose
-        # por que el streaming no funciona.
         logger.warning(
             "[Streaming] streaming_enabled=true pero no hay ningun streamer activo. "
             "Define zello_url, rtmp_url o icecast_url en la seccion 'streaming' del config.yaml."
@@ -256,12 +263,12 @@ def main():
     afiliacion = AfiliacionConfig(AFILIACION_PATH)
     app_state.afiliacion = afiliacion
 
-    pool, llamadas_db, grupos_db = _init_db(cfg, env)
-    bot                          = _init_bot(cfg, env)
-    email                        = _init_email(cfg, env)
+    pool, llamadas_db, grupos_db, usuarios_db = _init_db(cfg, env)
+    bot                                        = _init_bot(cfg, env)
+    email                                      = _init_email(cfg, env)
     afiliacion.set_bot(bot)
-    audio_buffer, stt, kf        = _init_audio(cfg, audio_output_dir)
-    pei_daemon                   = _init_pei(
+    audio_buffer, stt, kf = _init_audio(cfg, audio_output_dir)
+    pei_daemon            = _init_pei(
         cfg, audio_buffer, stt, kf, llamadas_db, afiliacion, bot, email,
         grupos_db, audio_output_dir
     )

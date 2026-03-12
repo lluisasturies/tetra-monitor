@@ -1,32 +1,24 @@
-from __future__ import annotations
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from db.pool import DBPool
-    from db.llamadas import LlamadasDB
-    from db.grupos import GruposDB
-    from integrations.telegram_bot import TelegramBot
-    from integrations.email_notifier import EmailNotifier
-    from core.afiliacion import AfiliacionConfig
-    from filters.keyword_filter import KeywordFilter
-
-
 class AppState:
-    """Contenedor de dependencias compartidas entre main.py y la API."""
+    """
+    Estado global compartido entre el daemon PEI, la API y los integraciones.
+    Se inicializa en main.py antes de arrancar cualquier componente.
+    """
 
     def __init__(self):
-        self.pool: DBPool | None = None
-        self.llamadas: LlamadasDB | None = None
-        self.grupos: GruposDB | None = None
-        self.bot: TelegramBot | None = None
-        self.email: EmailNotifier | None = None
-        self.afiliacion: AfiliacionConfig | None = None
-        self.keyword_filter: KeywordFilter | None = None
-        # FIX: refresh_tokens como atributo de instancia para evitar que
-        # multiples instancias de AppState compartan el mismo set.
-        self.refresh_tokens: set[str] = set()
-        self.radio_connected: bool = False
-        self.streaming_active: bool = False
+        self.pool            = None   # DBPool
+        self.llamadas        = None   # LlamadasDB
+        self.grupos          = None   # GruposDB
+        self.usuarios        = None   # UsuariosDB  <-- nuevo
+        self.afiliacion      = None   # AfiliacionConfig
+        self.keyword_filter  = None   # KeywordFilter
+        self.bot             = None   # TelegramBot
+        self.email           = None   # EmailNotifier
+        self.radio_connected = False
+        self.streaming_active = False
+
+        # Refresh tokens en memoria (legado -- ya no se usan si BD disponible)
+        # Se mantiene por compatibilidad con tests que no montan BD.
+        self.refresh_tokens: set = set()
 
 
 app_state = AppState()
