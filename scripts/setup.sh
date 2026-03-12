@@ -103,10 +103,10 @@ pip install --upgrade setuptools wheel --quiet
 pip install -r "$REQUIREMENTS"
 echo "Dependencias instaladas correctamente"
 
-# Instalar el paquete en modo editable para que importlib.metadata
-# pueda leer la version definida en pyproject.toml
-echo "Instalando tetra-monitor en modo editable..."
-pip install -e "$PROJECT_ROOT" --quiet
+# Instalar el paquete para que importlib.metadata pueda leer
+# la version definida en pyproject.toml
+echo "Instalando tetra-monitor..."
+pip install "$PROJECT_ROOT" --quiet
 echo "Paquete instalado correctamente"
 
 # ---------------------------
