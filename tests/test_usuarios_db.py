@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 import pytest
 import unittest.mock as mock
 from datetime import datetime, timedelta, timezone
@@ -64,9 +63,8 @@ def test_crear_usuario_llama_insert(db):
         "rol": "viewer", "activo": True,
         "created_at": datetime.now(timezone.utc), "last_login": None,
     }
-    from psycopg2.extras import RealDictCursor
     conn.cursor.return_value.__enter__ = lambda s: cur
-    result = db.crear("alice", "secreto123", rol="viewer")
+    db.crear("alice", "secreto123", rol="viewer")
     assert cur.execute.called
     sql = cur.execute.call_args[0][0]
     assert "INSERT INTO usuarios" in sql
@@ -181,7 +179,7 @@ def test_actualizar_rol_invalido_devuelve_none(db):
 
 def test_actualizar_sin_campos_llama_obtener(db):
     with mock.patch.object(db, "obtener_por_id", return_value={"id": 1}) as mock_obtener:
-        result = db.actualizar(1)
+        db.actualizar(1)
         mock_obtener.assert_called_once_with(1)
 
 
