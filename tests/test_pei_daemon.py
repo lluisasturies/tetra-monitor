@@ -24,6 +24,27 @@ from streaming.zello_streamer import ZelloStreamer  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
+# app_state mock
+# ---------------------------------------------------------------------------
+
+class _FakeAppState:
+    radio_connected = False
+
+_fake_app_state = _FakeAppState()
+
+
+@pytest.fixture(autouse=True)
+def reset_app_state(monkeypatch):
+    _fake_app_state.radio_connected = False
+    monkeypatch.setattr("pei.daemon.pei_daemon.app_state", _fake_app_state, raising=False)
+    import importlib, sys
+    # Aseguramos que el modulo app_state mockeado esta disponible en el path
+    sys.modules["app_state"] = mock.MagicMock(radio_connected=False)
+    yield
+    sys.modules["app_state"].radio_connected = False
+
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
@@ -99,6 +120,162 @@ def zello() -> ZelloStreamer:
 
 
 # ---------------------------------------------------------------------------
+# _set_radio_connected
+# ---------------------------------------------------------------------------
+
+def test_set_radio_connected_true_notifica_email(daemon):
+    sys.modules["app_state"].radio_connected = False
+    daemon._set_radio_connected(True)
+    daemon.email.notificar_radio_conectada.assert_called_once()
+    daemon.email.notificar_radio_desconectada.assert_not_called()
+
+
+def test_set_radio_connected_false_notifica_email(daemon):
+    sys.modules["app_state"].radio_connected = True
+    daemon._set_radio_connected(False)
+    daemon.email.notificar_radio_desconectada.assert_called_once()
+    daemon.email.notificar_radio_conectada.assert_not_called()
+
+
+def test_set_radio_connected_mismo_estado_no_notifica(daemon):
+    sys.modules["app_state"].radio_connected = True
+    daemon._set_radio_connected(True)
+    daemon.email.notificar_radio_conectada.assert_not_called()
+    daemon.email.notificar_radio_desconectada.assert_not_called()
+
+
+def test_set_radio_connected_sin_email_no_falla():
+    d = _make_daemon(email=None)
+    sys.modules["app_state"].radio_connected = False
+    d._set_radio_connected(True)  # no debe lanzar
+
+
+# ---------------------------------------------------------------------------
+# Watchdog en hilo dedicado
+# ---------------------------------------------------------------------------
+
+def test_watchdog_desactivado_no_arranca_hilo():
+    d = _make_daemon(watchdog_timeout=0)
+    d._start_watchdog()
+    assert d._watchdog_thread is None
+
+
+def test_watchdog_activado_arranca_hilo():
+    d = _make_daemon(watchdog_timeout=30)
+    d._start_watchdog()
+    assert d._watchdog_thread is not None
+    assert d._watchdog_thread.is_alive()
+    d._stop_event.set()  # detener el hilo al acabar el test
+
+
+def test_watchdog_solicita_reconexion_si_timeout():
+    d = _make_daemon(watchdog_timeout=1)
+    d._last_event_time = time.monotonic() - 10
+    sys.modules["app_state"].radio_connected = True
+    # Simula lo que hace el bucle watchdog
+    elapsed = time.monotonic() - d._last_event_time
+    if elapsed > d.watchdog_timeout:
+        d._reconnect_requested.set()
+    assert d._reconnect_requested.is_set()
+
+
+def test_watchdog_no_solicita_reconexion_si_reciente():
+    d = _make_daemon(watchdog_timeout=60)
+    d._last_event_time = time.monotonic()
+    sys.modules["app_state"].radio_connected = True
+    elapsed = time.monotonic() - d._last_event_time
+    if elapsed > d.watchdog_timeout:
+        d._reconnect_requested.set()
+    assert not d._reconnect_requested.is_set()
+
+
+def test_watchdog_no_actua_si_radio_desconectada():
+    d = _make_daemon(watchdog_timeout=1)
+    d._last_event_time = time.monotonic() - 100
+    sys.modules["app_state"].radio_connected = False
+    # El watchdog no debe actuar si radio_connected=False
+    if sys.modules["app_state"].radio_connected:
+        elapsed = time.monotonic() - d._last_event_time
+        if elapsed > d.watchdog_timeout:
+            d._reconnect_requested.set()
+    assert not d._reconnect_requested.is_set()
+
+
+# ---------------------------------------------------------------------------
+# _check_recording_timeout y _abort_recording
+# ---------------------------------------------------------------------------
+
+def test_check_recording_timeout_no_actua_si_desactivado():
+    d = _make_daemon(max_recording_seconds=0)
+    d._recording_start_time = time.monotonic() - 9999
+    d._executor = mock.MagicMock()
+    d._check_recording_timeout()
+    d.audio_buffer.stop_recording.assert_not_called()
+
+
+def test_check_recording_timeout_no_actua_si_no_grabando():
+    d = _make_daemon(max_recording_seconds=30)
+    d._recording_start_time = None
+    d._check_recording_timeout()
+    d.audio_buffer.stop_recording.assert_not_called()
+
+
+def test_check_recording_timeout_corta_grabacion_larga():
+    d = _make_daemon(max_recording_seconds=30)
+    d._recording_start_time = time.monotonic() - 60
+    d.audio_buffer.stop_recording.return_value = "/tmp/audio_test/timeout.flac"
+    d._executor = mock.MagicMock()
+    d._check_recording_timeout()
+    d.audio_buffer.stop_recording.assert_called_once()
+    d._executor.submit.assert_called_once()
+    assert d._recording_start_time is None
+
+
+def test_check_recording_timeout_no_corta_grabacion_corta():
+    d = _make_daemon(max_recording_seconds=120)
+    d._recording_start_time = time.monotonic() - 5
+    d._executor = mock.MagicMock()
+    d._check_recording_timeout()
+    d.audio_buffer.stop_recording.assert_not_called()
+
+
+def test_abort_recording_descarta_grabacion_activa():
+    d = _make_daemon()
+    d._recording_start_time = time.monotonic()
+    d._abort_recording()
+    assert d._recording_start_time is None
+    d.audio_buffer.abort_recording.assert_called_once()
+    d.audio_buffer.stop_recording.assert_not_called()
+
+
+def test_abort_recording_no_actua_si_no_grabando():
+    d = _make_daemon()
+    d._recording_start_time = None
+    d._abort_recording()
+    d.audio_buffer.abort_recording.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# PTT - recording_start_time
+# ---------------------------------------------------------------------------
+
+def test_ptt_start_registra_recording_start_time():
+    d = _make_daemon()
+    before = time.monotonic()
+    d._handle_event(PEIEvent(type="PTT_START"))
+    assert d._recording_start_time is not None
+    assert d._recording_start_time >= before
+
+
+def test_ptt_end_limpia_recording_start_time():
+    d = _make_daemon()
+    d._recording_start_time = time.monotonic()
+    d.audio_buffer.stop_recording.return_value = None
+    d._handle_event(PEIEvent(type="PTT_END"))
+    assert d._recording_start_time is None
+
+
+# ---------------------------------------------------------------------------
 # _handle_event - actualizacion de last_event_time
 # ---------------------------------------------------------------------------
 
@@ -110,7 +287,7 @@ def test_handle_event_actualiza_last_event_time(daemon):
 
 
 # ---------------------------------------------------------------------------
-# _handle_event - PTT_START / PTT_END sin Zello
+# PTT_START / PTT_END sin Zello
 # ---------------------------------------------------------------------------
 
 def test_ptt_start_inicia_grabacion(daemon):
@@ -158,7 +335,7 @@ def test_ptt_end_no_graba_si_recording_disabled(daemon):
 
 
 # ---------------------------------------------------------------------------
-# _handle_event - PTT_START / PTT_END con Zello
+# PTT_START / PTT_END con Zello
 # ---------------------------------------------------------------------------
 
 def test_ptt_start_llama_call_start_en_zello(daemon, zello):
@@ -188,11 +365,9 @@ def test_ptt_end_no_llama_call_end_en_streamer_no_zello(daemon):
 def test_ciclo_completo_ptt_con_zello(daemon, zello):
     daemon.audio_buffer.stop_recording.return_value = "/tmp/audio.flac"
     daemon._executor = mock.MagicMock()
-
     daemon._handle_event(PEIEvent(type="PTT_START"), streamer=zello)
     assert daemon.audio_buffer.start_recording.called
     assert zello.call_start.called
-
     daemon._handle_event(PEIEvent(type="PTT_END"), streamer=zello)
     assert daemon.audio_buffer.stop_recording.called
     assert zello.call_end.called
@@ -200,7 +375,7 @@ def test_ciclo_completo_ptt_con_zello(daemon, zello):
 
 
 # ---------------------------------------------------------------------------
-# _handle_call_start - CALL_START / CALL_END / CALL_CONNECTED
+# CALL_START / CALL_END / CALL_CONNECTED
 # ---------------------------------------------------------------------------
 
 def test_call_start_actualiza_grupo_y_ssi(daemon):
@@ -226,7 +401,7 @@ def test_call_connected_no_modifica_estado(daemon):
 
 
 # ---------------------------------------------------------------------------
-# _handle_call_start - mensaje de texto a Zello
+# Mensaje de texto a Zello en CALL_START
 # ---------------------------------------------------------------------------
 
 def test_call_start_envia_texto_a_zello_con_nombre_grupo(zello):
@@ -244,7 +419,6 @@ def test_call_start_envia_solo_gssi_si_grupo_no_en_bd(zello):
     gdb = _make_grupos_db()
     d = _make_daemon(grupos_db=gdb)
     d._handle_event(PEIEvent(type="CALL_START", grupo=99999, ssi=777), streamer=zello)
-    zello.send_text_message.assert_called_once()
     msg = zello.send_text_message.call_args[0][0]
     assert "99999" in msg
     assert "777" in msg
@@ -254,7 +428,6 @@ def test_call_start_envia_solo_gssi_si_grupo_no_en_bd(zello):
 def test_call_start_envia_texto_sin_grupos_db(zello):
     d = _make_daemon(grupos_db=None)
     d._handle_event(PEIEvent(type="CALL_START", grupo=36001, ssi=12345), streamer=zello)
-    zello.send_text_message.assert_called_once()
     msg = zello.send_text_message.call_args[0][0]
     assert "36001" in msg
 

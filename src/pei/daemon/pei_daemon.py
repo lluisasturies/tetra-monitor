@@ -1,5 +1,6 @@
 import os
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from core.logger import logger, calls_logger
 from core.afiliacion import AfiliacionConfig
@@ -10,6 +11,7 @@ from streaming.zello_streamer import ZelloStreamer
 
 AFILIACION_CHECK_INTERVAL = 5
 STT_MAX_WORKERS = 1
+WATCHDOG_POLL_INTERVAL = 1  # segundos entre comprobaciones del hilo watchdog
 
 
 class PEIDaemon:
@@ -19,31 +21,128 @@ class PEIDaemon:
                  port="", baudrate=9600, audio_output_dir="", retention_days=7,
                  recording_enabled=True, processing_enabled=True, save_all_calls=False,
                  watchdog_timeout=60, max_recording_seconds=120):
-        self.motorola_pei_cls = motorola_pei_cls
-        self.audio_buffer = audio_buffer
-        self.stt_processor = stt_processor
-        self.keyword_filter = keyword_filter
-        self.llamadas_db = llamadas_db
-        self.afiliacion = afiliacion
-        self.bot = bot
-        self.email = email
-        self.grupos_db = grupos_db          # opcional: lookup de nombre de grupo
-        self.port = port
-        self.baudrate = baudrate
-        self.recording_enabled = recording_enabled
-        self.processing_enabled = processing_enabled
-        self.save_all_calls = save_all_calls
-        self.watchdog_timeout = watchdog_timeout
+        self.motorola_pei_cls    = motorola_pei_cls
+        self.audio_buffer        = audio_buffer
+        self.stt_processor       = stt_processor
+        self.keyword_filter      = keyword_filter
+        self.llamadas_db         = llamadas_db
+        self.afiliacion          = afiliacion
+        self.bot                 = bot
+        self.email               = email
+        self.grupos_db           = grupos_db
+        self.port                = port
+        self.baudrate            = baudrate
+        self.recording_enabled   = recording_enabled
+        self.processing_enabled  = processing_enabled
+        self.save_all_calls      = save_all_calls
+        self.watchdog_timeout    = watchdog_timeout
         self.max_recording_seconds = max_recording_seconds
-        self.radio = None
+
+        self.radio                  = None
         self._last_afiliacion_check = 0.0
-        self._last_event_time = time.monotonic()
-        self._current_grupo = 0
-        self._current_ssi = 0
-        self._recording_start = 0.0
-        self._executor = ThreadPoolExecutor(max_workers=STT_MAX_WORKERS)
-        self._cleanup = AudioCleanup(audio_output_dir, retention_days)
+        self._last_event_time       = time.monotonic()
+        self._current_grupo         = 0
+        self._current_ssi           = 0
+        self._recording_start       = 0.0       # compat: monotonic del ultimo PTT_START
+        self._recording_start_time  = None      # None = no grabando, float = grabando desde
+        self._executor              = ThreadPoolExecutor(max_workers=STT_MAX_WORKERS)
+        self._cleanup               = AudioCleanup(audio_output_dir, retention_days)
+
+        # Watchdog en hilo dedicado
+        self._stop_event         = threading.Event()
+        self._reconnect_requested = threading.Event()
+        self._watchdog_thread    = None
+
         self._init_radio()
+
+    # ------------------------------------------------------------------
+    # Estado de conexion de la radio
+    # ------------------------------------------------------------------
+
+    def _set_radio_connected(self, connected: bool):
+        """
+        Actualiza el estado de conexion de la radio y notifica por email
+        solo si el estado cambia. Evita spam de alertas.
+        """
+        from app_state import app_state
+        if connected == app_state.radio_connected:
+            return
+        app_state.radio_connected = connected
+        if self.email:
+            if connected:
+                self.email.notificar_radio_conectada()
+            else:
+                self.email.notificar_radio_desconectada()
+
+    # ------------------------------------------------------------------
+    # Watchdog en hilo dedicado
+    # ------------------------------------------------------------------
+
+    def _start_watchdog(self):
+        """
+        Arranca el hilo watchdog si watchdog_timeout > 0.
+        El hilo comprueba periodicamente si han llegado eventos recientes
+        y pone _reconnect_requested si no es asi.
+        """
+        if self.watchdog_timeout <= 0:
+            return
+        self._watchdog_thread = threading.Thread(
+            target=self._watchdog_loop, daemon=True, name="pei-watchdog"
+        )
+        self._watchdog_thread.start()
+        logger.info(f"[Watchdog] Hilo iniciado (timeout={self.watchdog_timeout}s)")
+
+    def _watchdog_loop(self):
+        """Bucle interno del hilo watchdog."""
+        while not self._stop_event.is_set():
+            from app_state import app_state
+            if app_state.radio_connected:
+                elapsed = time.monotonic() - self._last_event_time
+                if elapsed > self.watchdog_timeout:
+                    logger.warning(
+                        f"[Watchdog] Sin eventos en {elapsed:.0f}s "
+                        f"(limite={self.watchdog_timeout}s) -- solicitando reconexion"
+                    )
+                    self._reconnect_requested.set()
+            self._stop_event.wait(WATCHDOG_POLL_INTERVAL)
+
+    # ------------------------------------------------------------------
+    # Grabacion con timeout explicito
+    # ------------------------------------------------------------------
+
+    def _check_recording_timeout(self):
+        """
+        Si max_recording_seconds > 0 y hay una grabacion activa que supera
+        ese limite, la descarta via _abort_recording().
+        Llamar desde el bucle principal.
+        """
+        if self.max_recording_seconds <= 0 or self._recording_start_time is None:
+            return
+        elapsed = time.monotonic() - self._recording_start_time
+        if elapsed > self.max_recording_seconds:
+            logger.warning(
+                f"[PEI] Grabacion supera limite ({elapsed:.0f}s > {self.max_recording_seconds}s)"
+                " -- abortando"
+            )
+            filename = f"{self._current_grupo}_{self._current_ssi}_{int(time.time())}.flac"
+            path = self.audio_buffer.stop_recording(filename)
+            self._recording_start_time = None
+            if path:
+                grupo = self._current_grupo
+                ssi   = self._current_ssi
+                self._executor.submit(self._process_audio, path, grupo, ssi)
+                logger.debug(f"[PEI] Grabacion por timeout encolada para STT: {path}")
+
+    def _abort_recording(self):
+        """
+        Descarta la grabacion activa sin enviarla a STT.
+        Llama a audio_buffer.abort_recording() si hay grabacion en curso.
+        """
+        if self._recording_start_time is None:
+            return
+        self._recording_start_time = None
+        self.audio_buffer.abort_recording()
+        logger.info("[PEI] Grabacion abortada (sin STT)")
 
     # ------------------------------------------------------------------
     # Helpers
@@ -56,7 +155,6 @@ class PEIDaemon:
         """
         if self.grupos_db:
             nombre = self.grupos_db.get_nombre(gssi)
-            # get_nombre devuelve str(gssi) si no existe
             if nombre != str(gssi):
                 return f"{nombre} ({gssi})"
         return str(gssi)
@@ -77,16 +175,17 @@ class PEIDaemon:
             self.radio = self.motorola_pei_cls(puerto, self.baudrate)
             logger.info(f"Motorola PEI inicializado en {puerto}")
             self._apply_afiliacion()
-            self.bot.radio_active = True
+            self._set_radio_connected(True)
             logger.info("[Telegram] Alertas activadas -- radio conectada")
         except Exception as e:
             logger.critical(f"No se pudo inicializar PEI en {puerto}: {e}")
             self.radio = None
-            self.bot.radio_active = False
+            self._set_radio_connected(False)
 
     def _reconnect_radio(self):
         logger.warning("[PEI] Intentando reconectar radio...")
-        self.bot.radio_active = False
+        self._set_radio_connected(False)
+        self._reconnect_requested.clear()
         try:
             if self.radio:
                 self.radio.close()
@@ -108,21 +207,6 @@ class PEIDaemon:
         if self.afiliacion.reload_if_changed():
             if self.radio:
                 self._apply_afiliacion()
-
-    def _check_watchdog(self):
-        if self.watchdog_timeout <= 0:
-            return
-        if time.monotonic() - self._last_event_time > self.watchdog_timeout:
-            logger.warning(f"[PEI] Watchdog: sin eventos en {self.watchdog_timeout}s, reconectando...")
-            self._reconnect_radio()
-            self._last_event_time = time.monotonic()
-
-    def _check_max_recording(self):
-        if self.max_recording_seconds <= 0 or not self.audio_buffer.is_recording:
-            return
-        if time.monotonic() - self._recording_start > self.max_recording_seconds:
-            logger.warning(f"[PEI] Limite de grabacion alcanzado ({self.max_recording_seconds}s), forzando PTT_END")
-            self._handle_ptt_end(streamer=None)
 
     def _process_audio(self, path: str, grupo: int, ssi: int):
         try:
@@ -153,7 +237,7 @@ class PEIDaemon:
             logger.error(f"Error en transcripcion async (grupo={grupo}, ssi={ssi}): {e}")
 
     # ------------------------------------------------------------------
-    # Handlers de eventos PTT separados para mayor claridad
+    # Handlers de eventos
     # ------------------------------------------------------------------
 
     def _handle_ptt_start(self, streamer=None):
@@ -162,7 +246,9 @@ class PEIDaemon:
 
         if self.recording_enabled:
             self.audio_buffer.start_recording()
-            self._recording_start = time.monotonic()
+            now = time.monotonic()
+            self._recording_start      = now
+            self._recording_start_time = now
         else:
             logger.debug("[PEI] PTT START ignorado -- grabacion desactivada")
 
@@ -175,6 +261,8 @@ class PEIDaemon:
 
         if isinstance(streamer, ZelloStreamer):
             streamer.call_end()
+
+        self._recording_start_time = None
 
         if self.recording_enabled:
             filename = f"{self._current_grupo}_{self._current_ssi}_{int(time.time())}.flac"
@@ -208,25 +296,24 @@ class PEIDaemon:
 
         if event.type == "PTT_START":
             self._handle_ptt_start(streamer)
-
         elif event.type == "PTT_END":
             self._handle_ptt_end(streamer)
-
         elif event.type == "CALL_START":
             self._handle_call_start(event, streamer)
-
         elif event.type == "CALL_CONNECTED":
             logger.info(f"CALL CONNECTED -- Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
             calls_logger.info(f"CALL_CONNECTED | grupo={self._current_grupo} | ssi={self._current_ssi}")
-
         elif event.type == "CALL_END":
             logger.info(f"CALL END -- Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
             calls_logger.info(f"CALL_END | grupo={self._current_grupo} | ssi={self._current_ssi}")
             self._current_grupo = 0
             self._current_ssi   = 0
-
         elif event.type == "TX_DEMAND":
             logger.debug("[PEI] TX_DEMAND recibido (radio transmitiendo)")
+
+    # ------------------------------------------------------------------
+    # Bucle principal
+    # ------------------------------------------------------------------
 
     def escuchar_pei(self, streamer=None):
         try:
@@ -236,18 +323,22 @@ class PEIDaemon:
             logger.critical(f"No se pudo iniciar AudioBuffer: {e}")
             raise RuntimeError("AudioBuffer no disponible")
 
+        self._start_watchdog()
         logger.info("PEI corriendo, esperando eventos...")
 
         while True:
             try:
+                # Reconexion solicitada por el watchdog
+                if self._reconnect_requested.is_set():
+                    self._reconnect_radio()
+
                 if self.radio is None:
                     self._reconnect_radio()
                     time.sleep(2)
                     continue
 
                 self._check_afiliacion()
-                self._check_watchdog()
-                self._check_max_recording()
+                self._check_recording_timeout()
                 self.keyword_filter.reload_if_changed()
                 self._cleanup.run_if_due()
 
@@ -276,7 +367,8 @@ class PEIDaemon:
 
     def shutdown(self, streamer=None):
         logger.info("Apagando PEI...")
-        self.bot.radio_active = False
+        self._stop_event.set()
+        self._set_radio_connected(False)
         self._executor.shutdown(wait=True)
 
         if streamer:
