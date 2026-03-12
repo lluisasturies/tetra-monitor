@@ -53,8 +53,6 @@ class LlamadasDB:
             logger.error(f"Error listando llamadas: {e}")
             return []
         finally:
-            # FIX: rollback antes de devolver la conexion al pool para
-            # que no quede en estado sucio si hubo un error en la query.
             conn.rollback()
             self.pool.putconn(conn)
 
@@ -122,6 +120,29 @@ class LlamadasDB:
         except Exception as e:
             logger.error(f"Error obteniendo llamada {llamada_id}: {e}")
             return None
+        finally:
+            conn.rollback()
+            self.pool.putconn(conn)
+
+    def get_health_metrics(self) -> dict:
+        """
+        Devuelve metricas de salud para el endpoint /health:
+        llamadas del dia de hoy y timestamp de la ultima llamada registrada.
+        """
+        conn = self.pool.getconn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS total FROM llamadas WHERE timestamp >= CURRENT_DATE"
+                )
+                calls_today = cur.fetchone()["total"]
+                cur.execute("SELECT MAX(timestamp) AS last_ts FROM llamadas")
+                last_ts = cur.fetchone()["last_ts"]
+                last_call_at = last_ts.isoformat() if last_ts else None
+            return {"calls_today": calls_today, "last_call_at": last_call_at}
+        except Exception as e:
+            logger.warning(f"[LlamadasDB] Error obteniendo metricas de salud: {e}")
+            return {"calls_today": None, "last_call_at": None}
         finally:
             conn.rollback()
             self.pool.putconn(conn)

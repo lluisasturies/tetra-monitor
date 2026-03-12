@@ -127,47 +127,26 @@ def _safe_username(username: str) -> str:
     cleaned = username[:32]
     return cleaned if len(username) <= 32 else cleaned + "..."
 
-def _require_llamadas():
-    if app_state.llamadas is None:
-        raise HTTPException(status_code=503, detail="Servicio no disponible aun")
 
-def _require_afiliacion():
-    if app_state.afiliacion is None:
-        raise HTTPException(status_code=503, detail="Servicio no disponible aun")
+def _require(attr: str, detail: str | None = None) -> None:
+    """
+    Lanza HTTP 503 si app_state.<attr> es None.
+    Unifica los cuatro _require_*() anteriores en un helper generico.
+    """
+    if getattr(app_state, attr) is None:
+        raise HTTPException(
+            status_code=503,
+            detail=detail or "Servicio no disponible aun",
+        )
 
-def _require_grupos():
-    if app_state.grupos is None:
-        raise HTTPException(status_code=503, detail="Servicio no disponible aun")
 
 def _require_keywords():
+    """Caso especial: keyword_filter ausente hasta que el daemon PEI arranca."""
     if app_state.keyword_filter is None:
         raise HTTPException(
             status_code=503,
             detail="El filtro de keywords no esta disponible. El daemon PEI debe estar activo.",
         )
-
-
-def _get_db_metrics() -> dict:
-    if app_state.llamadas is None:
-        return {"calls_today": None, "last_call_at": None}
-    try:
-        from psycopg2.extras import RealDictCursor
-        conn = app_state.pool.getconn()
-        try:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT COUNT(*) AS total FROM llamadas WHERE timestamp >= CURRENT_DATE"
-                )
-                calls_today = cur.fetchone()["total"]
-                cur.execute("SELECT MAX(timestamp) AS last_ts FROM llamadas")
-                last_ts = cur.fetchone()["last_ts"]
-                last_call_at = last_ts.isoformat() if last_ts else None
-        finally:
-            app_state.pool.putconn(conn)
-        return {"calls_today": calls_today, "last_call_at": last_call_at}
-    except Exception as e:
-        logger.warning(f"[health] No se pudieron obtener metricas de BD: {e}")
-        return {"calls_today": None, "last_call_at": None}
 
 
 # ------------------------------------------------------------------
@@ -183,6 +162,9 @@ def create_access_token(username: str) -> str:
 
 
 def create_refresh_token() -> str:
+    # Los refresh tokens se guardan en memoria. Si el proceso se reinicia
+    # los tokens activos se invalidan y los usuarios deben hacer login de nuevo.
+    # Comportamiento aceptable para un sistema de operador de radio.
     token = secrets.token_hex(32)
     app_state.refresh_tokens.add(token)
     return token
@@ -245,7 +227,9 @@ def health(request: Request):
     streaming   = app_state.streaming_active
     degraded    = not (db_ok and pei_ok and radio_ok)
     status      = "degraded" if degraded else "ok"
-    metrics     = _get_db_metrics()
+
+    # Metricas de BD delegadas en LlamadasDB (separacion de capas)
+    metrics = app_state.llamadas.get_health_metrics() if app_state.llamadas else {"calls_today": None, "last_call_at": None}
 
     body = {
         "status":       status,
@@ -323,7 +307,7 @@ def listar_llamadas(
     ssi:    int|None = Query(default=None,               description="Filtrar por SSI (emisor)"),
     texto:  str|None = Query(default=None,               description="Buscar en transcripcion (contiene)"),
 ):
-    _require_llamadas()
+    _require("llamadas")
     rows, total = app_state.llamadas.listar_filtrado(
         limit=limit, offset=offset, gssi=gssi, ssi=ssi, texto=texto
     )
@@ -338,7 +322,7 @@ def listar_llamadas(
 @app.get("/calls/{llamada_id}", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def llamada_detalle(request: Request, llamada_id: int):
-    _require_llamadas()
+    _require("llamadas")
     llamada = app_state.llamadas.obtener(llamada_id)
     if not llamada:
         raise HTTPException(status_code=404, detail="Llamada no encontrada")
@@ -386,7 +370,7 @@ def eliminar_keyword(request: Request, keyword: str):
 @app.get("/afiliacion", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def get_afiliacion(request: Request):
-    _require_afiliacion()
+    _require("afiliacion")
     return {
         "gssi":      app_state.afiliacion.gssi,
         "scan_list": app_state.afiliacion.scan_list,
@@ -396,7 +380,7 @@ def get_afiliacion(request: Request):
 @app.post("/afiliacion/gssi", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def update_gssi(request: Request, update: GSSIUpdate):
-    _require_afiliacion()
+    _require("afiliacion")
     try:
         app_state.afiliacion.update_gssi(update.gssi)
     except ValueError as e:
@@ -407,7 +391,7 @@ def update_gssi(request: Request, update: GSSIUpdate):
 @app.post("/afiliacion/scan-list", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def update_scanlist(request: Request, update: ScanListUpdate):
-    _require_afiliacion()
+    _require("afiliacion")
     try:
         app_state.afiliacion.update_scan_list(update.scan_list)
     except ValueError as e:
@@ -425,14 +409,14 @@ def listar_grupos(
     request: Request,
     solo_activos: bool = Query(default=True, description="Si true, devuelve solo grupos activos"),
 ):
-    _require_grupos()
+    _require("grupos")
     return app_state.grupos.listar(solo_activos=solo_activos)
 
 
 @app.get("/groups/{gssi}", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def detalle_grupo(request: Request, gssi: int):
-    _require_grupos()
+    _require("grupos")
     grupos = app_state.grupos.listar(solo_activos=False)
     grupo  = next((g for g in grupos if g["gssi"] == gssi), None)
     if not grupo:
@@ -443,7 +427,7 @@ def detalle_grupo(request: Request, gssi: int):
 @app.post("/groups", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
 def upsert_grupo(request: Request, body: GrupoUpsert):
-    _require_grupos()
+    _require("grupos")
     ok = app_state.grupos.upsert_grupo(
         gssi=body.gssi,
         nombre=body.nombre,
@@ -461,14 +445,14 @@ def upsert_grupo(request: Request, body: GrupoUpsert):
 @app.get("/folders", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def listar_carpetas(request: Request):
-    _require_grupos()
+    _require("grupos")
     return app_state.grupos.listar_carpetas()
 
 
 @app.get("/folders/{carpeta_id}", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def detalle_carpeta(request: Request, carpeta_id: int):
-    _require_grupos()
+    _require("grupos")
     carpetas = app_state.grupos.listar_carpetas()
     carpeta  = next((c for c in carpetas if c["id"] == carpeta_id), None)
     if not carpeta:
@@ -479,7 +463,7 @@ def detalle_carpeta(request: Request, carpeta_id: int):
 @app.post("/folders", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
 def upsert_carpeta(request: Request, body: CarpetaUpsert):
-    _require_grupos()
+    _require("grupos")
     carpeta_id = app_state.grupos.upsert_carpeta(
         nombre=body.nombre,
         orden=body.orden,
@@ -500,7 +484,7 @@ def upsert_carpeta(request: Request, body: CarpetaUpsert):
 @app.put("/folders/{carpeta_id}/groups", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
 def actualizar_grupos_carpeta(request: Request, carpeta_id: int, body: list[CarpetaGrupoEntry]):
-    _require_grupos()
+    _require("grupos")
     carpetas = app_state.grupos.listar_carpetas()
     if not any(c["id"] == carpeta_id for c in carpetas):
         raise HTTPException(status_code=404, detail="Carpeta no encontrada")
@@ -517,7 +501,7 @@ def actualizar_grupos_carpeta(request: Request, carpeta_id: int, body: list[Carp
 @app.delete("/folders/{carpeta_id}", dependencies=[Depends(verify_token)])
 @limiter.limit("30/minute")
 def borrar_carpeta(request: Request, carpeta_id: int):
-    _require_grupos()
+    _require("grupos")
     ok = app_state.grupos.borrar_carpeta(carpeta_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Carpeta no encontrada")
@@ -531,5 +515,5 @@ def borrar_carpeta(request: Request, carpeta_id: int):
 @app.get("/scan-lists", dependencies=[Depends(verify_token)])
 @limiter.limit("60/minute")
 def listar_scan_lists(request: Request):
-    _require_grupos()
+    _require("grupos")
     return app_state.grupos.listar_scan_lists()

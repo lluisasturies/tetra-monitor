@@ -1,4 +1,6 @@
 import time
+import threading
+import queue
 import requests
 from core.logger import logger
 
@@ -24,6 +26,12 @@ class TelegramBot:
         self._alert_relevant_calls     = _a.get("relevant_calls",     True)
         self._alert_afiliacion_changed = _a.get("afiliacion_changed", True)
 
+        # Cola de mensajes para el hilo de envio -- evita que los envios
+        # bloqueen el hilo del daemon PEI en caso de red lenta o caida.
+        self._queue: queue.Queue = queue.Queue()
+        self._worker = threading.Thread(target=self._send_loop, daemon=True, name="telegram-sender")
+        self._worker.start()
+
     # ------------------------------------------------------------------
     # Alertas operativas
     # ------------------------------------------------------------------
@@ -46,7 +54,7 @@ class TelegramBot:
             f"SSI: `{ssi}`\n"
             f"Transcripcion: _{texto}_"
         )
-        self._send_with_retry(mensaje)
+        self._enqueue(mensaje)
 
     def notificar_cambio_afiliacion(self, tipo: str, anterior: str | None, nuevo: str | None):
         """Notifica un cambio de GSSI o scan list."""
@@ -61,7 +69,22 @@ class TelegramBot:
             f"Nuevo: `{nuevo_str}`"
         )
         logger.info(f"[Telegram] Notificando cambio de {tipo}: '{anterior_str}' -> '{nuevo_str}'")
-        self._send_with_retry(mensaje)
+        self._enqueue(mensaje)
+
+    # ------------------------------------------------------------------
+    # Cola asincrona
+    # ------------------------------------------------------------------
+
+    def _enqueue(self, mensaje: str):
+        """Encola el mensaje para enviarlo desde el hilo dedicado."""
+        self._queue.put(mensaje)
+
+    def _send_loop(self):
+        """Hilo dedicado que consume la cola y envia los mensajes sin bloquear el daemon."""
+        while True:
+            mensaje = self._queue.get()
+            self._send_with_retry(mensaje)
+            self._queue.task_done()
 
     # ------------------------------------------------------------------
     # Internals
@@ -82,8 +105,6 @@ class TelegramBot:
                 logger.warning(f"[Telegram] Respuesta {resp.status_code} (intento {intento})")
             except requests.exceptions.RequestException as e:
                 logger.error(f"[Telegram] Error en envio (intento {intento}): {e}")
-            # FIX: solo esperar si quedan mas intentos para no bloquear
-            # innecesariamente despues del ultimo fallo.
             if intento < self.max_retries:
                 time.sleep(2 ** intento)
         logger.error("[Telegram] No se pudo enviar el mensaje tras todos los reintentos")
