@@ -53,19 +53,16 @@ api:
 # ============================================================
 # STREAMING - Emision de audio en vivo
 # Solo se puede activar uno a la vez. Prioridad: zello > rtmp > icecast.
+# Descomenta la URL del modo que quieras usar.
 # ============================================================
 streaming:
   bitrate: "128k"   # Usado por RTMP e Icecast (no aplica a Zello)
 
   # --- Opcion 1: Zello (PTT-aware) ---
-  # Requiere credenciales de desarrollador Zello:
-  # https://github.com/zelloptt/zello-channel-api
-  zello:
-    enabled: false
-    username: "mi-usuario-zello"
-    password: "mi-password-zello"
-    token: "mi-token-de-desarrollador"
-    channel: "mi-canal-tetra"
+  # Requiere credenciales de desarrollador en .env:
+  #   ZELLO_USERNAME, ZELLO_PASSWORD, ZELLO_TOKEN
+  # Consulta: https://github.com/zelloptt/zello-channel-api
+  # zello_url: "mi-canal-tetra"
 
   # --- Opcion 2: RTMP (streaming continuo) ---
   # rtmp_url: "rtmp://localhost/live/tetra"

@@ -39,12 +39,15 @@ class ZelloStreamer:
       <audio>    -> send_audio(chunk)
       PTT_END    -> call_end()
 
-    El bucle asyncio corre en un hilo dedicado para no bloquear el daemon PEI.
+    Configuracion en config.yaml:
+      streaming:
+        zello_url: "nombre-del-canal"   # activa Zello (analogo a rtmp_url/icecast_url)
 
-    IMPORTANTE: Este streamer requiere credenciales de desarrollador Zello.
-    Consulta https://github.com/zelloptt/zello-channel-api para obtenerlas.
-    Las credenciales se configuran en config.yaml bajo streaming.zello:
-      username, password, token, channel
+    Credenciales sensibles en .env (no en el YAML):
+      ZELLO_USERNAME, ZELLO_PASSWORD, ZELLO_TOKEN
+
+    Requiere credenciales de desarrollador Zello:
+    https://github.com/zelloptt/zello-channel-api
     """
 
     def __init__(self, username: str, password: str, token: str, channel: str,
@@ -128,16 +131,10 @@ class ZelloStreamer:
     # ------------------------------------------------------------------
 
     def send_text_message(self, text: str):
-        """
-        Envia un mensaje de texto al canal Zello.
-        Llamar en CALL_START para informar a los oyentes del grupo y SSI activos.
-        """
         if not self.running:
             logger.debug("[Zello] send_text_message ignorado: sin conexion")
             return
-        asyncio.run_coroutine_threadsafe(
-            self._send_text(text), self._loop
-        )
+        asyncio.run_coroutine_threadsafe(self._send_text(text), self._loop)
         logger.debug(f"[Zello] Mensaje de texto encolado: {text}")
 
     def call_start(self):
@@ -170,10 +167,6 @@ class ZelloStreamer:
         logger.info("[Zello] Stream cerrado")
 
     def send_audio(self, audio):
-        """
-        Recibe un numpy array float32 y lo encola para enviar a Zello.
-        Solo envia si hay un stream PTT activo.
-        """
         if not self._in_call or not self.running:
             return
         import numpy as np
@@ -182,7 +175,6 @@ class ZelloStreamer:
         self._flush_buffer()
 
     def _flush_buffer(self):
-        """Codifica y envia todos los frames completos disponibles en el buffer."""
         frame_bytes = OPUS_FRAME_SIZE * 2
         while len(self._buf) >= frame_bytes:
             frame = self._buf[:frame_bytes]
@@ -200,11 +192,7 @@ class ZelloStreamer:
         if not self._ws:
             return
         try:
-            cmd = {
-                "command": "send_text_message",
-                "seq": int(time.time()),
-                "text": text,
-            }
+            cmd = {"command": "send_text_message", "seq": int(time.time()), "text": text}
             await self._ws.send(json.dumps(cmd))
         except Exception as e:
             logger.error(f"[Zello] Error enviando mensaje de texto: {e}")
@@ -227,8 +215,7 @@ class ZelloStreamer:
     async def _stop_stream(self):
         if self._stream_id is None:
             return
-        cmd = {"command": "stop_stream", "stream_id": self._stream_id}
-        await self._ws.send(json.dumps(cmd))
+        await self._ws.send(json.dumps({"command": "stop_stream", "stream_id": self._stream_id}))
 
     async def _send_audio_packet(self, opus_data: bytes):
         if self._stream_id is None or not self.running:
