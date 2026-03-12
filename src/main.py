@@ -180,8 +180,6 @@ def _init_pei(
     llamadas_db: LlamadasDB, afiliacion: AfiliacionConfig, bot: TelegramBot,
     email: EmailNotifier, grupos_db: GruposDB, audio_output_dir: str,
 ) -> PEIDaemon:
-    # FIX: grupos_db se pasa explicitamente para que _grupo_label
-    # pueda resolver nombres desde la BD en produccion.
     features = cfg.get("features", {})
     return PEIDaemon(
         motorola_pei_cls=MotorolaPEI,
@@ -224,13 +222,27 @@ def _init_api(cfg: dict) -> threading.Thread:
 def _init_streaming(cfg: dict) -> object | None:
     features   = cfg.get("features", {})
     stream_cfg = cfg.get("streaming", {})
+
     if not features.get("streaming_enabled", False):
         app_state.streaming_active = False
         return None
+
     stream_cfg["samplerate"] = cfg["audio"]["sample_rate"]
     stream_cfg["channels"]   = cfg["audio"]["channels"]
     streamer = create_streamer(stream_cfg)
-    app_state.streaming_active = streamer is not None and streamer.running
+
+    if streamer is None:
+        # streaming_enabled=true pero ninguna URL definida (o credenciales Zello
+        # ausentes). Avisamos explicitamente para no dejar al usuario preguntandose
+        # por que el streaming no funciona.
+        logger.warning(
+            "[Streaming] streaming_enabled=true pero no hay ningun streamer activo. "
+            "Define zello_url, rtmp_url o icecast_url en la seccion 'streaming' del config.yaml."
+        )
+        app_state.streaming_active = False
+        return None
+
+    app_state.streaming_active = streamer.running
     return streamer
 
 
