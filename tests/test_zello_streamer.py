@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # --- Mockear dependencias opcionales antes de importar el modulo ---
 mock_websockets = mock.MagicMock()
-mock_opuslib   = mock.MagicMock()
+mock_opuslib    = mock.MagicMock()
 
 mock_encoder_instance = mock.MagicMock()
 mock_encoder_instance.encode.return_value = b"\x00" * 40
@@ -42,6 +42,9 @@ def streamer():
         s.running    = True
         s._ws        = mock.MagicMock()
         s._loop      = mock.MagicMock()
+        # FIX: aseguramos que el encoder del streamer sea exactamente
+        # mock_encoder_instance para que los tests puedan inspeccionarlo.
+        s._encoder   = mock_encoder_instance
         mock_future          = mock.MagicMock()
         mock_future.result.return_value = 42
         mock.patch(
@@ -130,19 +133,10 @@ def _pcm16(n_samples: int, value: int = 0) -> bytes:
 
 
 def test_send_audio_no_actua_si_no_en_llamada(streamer):
-    """Inyectamos bytes PCM16 directamente en _buf y verificamos que no se codifica."""
+    """send_audio retorna antes de tocar el buffer si _in_call=False."""
     mock_encoder_instance.encode.reset_mock()
     streamer._in_call = False
-    # Llamar a _flush_buffer directamente no debe codificar nada si no hay llamada activa
-    # send_audio devuelve antes si not _in_call
-    streamer._buf = _pcm16(OPUS_FRAME_SIZE)
-    # Simulamos lo que haria send_audio internamente sin numpy:
-    # como _in_call=False, send_audio retorna antes de tocar el buffer
-    # Verificamos que si llamamos _flush_buffer SIN estar en llamada, no hay efecto
-    # (el guard esta en send_audio, no en _flush_buffer)
-    # -> test correcto: send_audio no llama a encode
     with mock.patch.object(streamer, "_flush_buffer") as mock_flush:
-        # Forzamos la llamada a send_audio con un array mock que nunca se usara
         audio_mock = mock.MagicMock()
         streamer.send_audio(audio_mock)
         mock_flush.assert_not_called()
@@ -161,13 +155,13 @@ def test_send_audio_no_actua_si_no_running(streamer):
 def test_flush_buffer_codifica_frame_completo(streamer):
     """_flush_buffer con exactamente un frame completo codifica una vez."""
     mock_encoder_instance.encode.reset_mock()
-    streamer._in_call = True
+    streamer._in_call   = True
     streamer._stream_id = 1
     streamer._buf = _pcm16(OPUS_FRAME_SIZE)
     with mock.patch("asyncio.run_coroutine_threadsafe"):
         streamer._flush_buffer()
     mock_encoder_instance.encode.assert_called_once()
-    assert streamer._buf == b""  # buffer vaciado
+    assert streamer._buf == b""
 
 
 def test_flush_buffer_acumula_si_frame_incompleto(streamer):
