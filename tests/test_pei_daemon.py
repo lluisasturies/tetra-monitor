@@ -136,12 +136,8 @@ def test_set_radio_connected_true_notifica_email(patch_app_state):
     """
     Cuando el estado pasa de False -> True, email.notificar_radio_conectada
     se llama exactamente una vez.
-    El daemon se crea con app_state.radio_connected=False (el fake recien
-    creado). _init_radio tiene exito y lo pone a True. Reseteamos el email.
-    Luego lo volvemos a False para disparar la transicion True de nuevo.
     """
     d = _make_daemon()  # tras __init__, app_state.radio_connected == True
-    # Forzar de vuelta a False para preparar la transicion
     patch_app_state.radio_connected = False
     d._set_radio_connected(True)
     d.email.notificar_radio_conectada.assert_called_once()
@@ -150,7 +146,6 @@ def test_set_radio_connected_true_notifica_email(patch_app_state):
 
 def test_set_radio_connected_false_notifica_email(patch_app_state):
     d = _make_daemon()  # app_state.radio_connected == True tras __init__
-    # Estado ya es True; transicion a False
     d._set_radio_connected(False)
     d.email.notificar_radio_desconectada.assert_called_once()
     d.email.notificar_radio_conectada.assert_not_called()
@@ -171,10 +166,6 @@ def test_set_radio_connected_sin_email_no_falla(patch_app_state):
 
 
 def test_set_radio_connected_actualiza_bot_radio_active(patch_app_state):
-    """
-    bot.radio_active debe sincronizarse con el nuevo estado.
-    Preparamos la transicion False->True igual que el test de email.
-    """
     d = _make_daemon()  # app_state.radio_connected == True tras __init__
     patch_app_state.radio_connected = False
     d.bot.radio_active = False
@@ -205,7 +196,6 @@ def test_watchdog_solicita_reconexion_si_timeout(patch_app_state):
     d = _make_daemon(watchdog_timeout=1)
     d._reconnect_requested.clear()
     d._last_event_time = time.monotonic() - 10
-    # Simular la logica del watchdog
     if patch_app_state.radio_connected:
         elapsed = time.monotonic() - d._last_event_time
         if elapsed > d.watchdog_timeout:
@@ -226,16 +216,10 @@ def test_watchdog_no_solicita_reconexion_si_reciente(patch_app_state):
 
 
 def test_watchdog_no_actua_si_radio_desconectada(patch_app_state):
-    """
-    Si radio_connected=False, el watchdog no debe setear _reconnect_requested
-    aunque haya pasado mucho tiempo sin eventos.
-    """
     d = _make_daemon(watchdog_timeout=1)
-    # Despues del __init__, radio_connected puede ser True; lo forzamos a False
     patch_app_state.radio_connected = False
-    d._reconnect_requested.clear()  # limpiar cualquier estado previo del __init__
+    d._reconnect_requested.clear()
     d._last_event_time = time.monotonic() - 100
-    # Simular la logica del watchdog
     if patch_app_state.radio_connected:
         elapsed = time.monotonic() - d._last_event_time
         if elapsed > d.watchdog_timeout:
@@ -404,16 +388,88 @@ def test_ptt_end_no_llama_call_end_en_streamer_no_zello(daemon):
     assert not hasattr(rtmp, "call_end") or not rtmp.call_end.called
 
 
+# ---------------------------------------------------------------------------
+# Test de integracion: ciclo completo CALL_START -> PTT_START -> PTT_END
+# ---------------------------------------------------------------------------
+
 def test_ciclo_completo_ptt_con_zello(daemon, zello):
+    """
+    Ciclo completo de una transmision TETRA con Zello:
+      CALL_START -> mensaje de texto en canal
+      PTT_START  -> grabacion iniciada + stream Zello abierto
+      PTT_END    -> grabacion parada + stream Zello cerrado + transcripcion encolada
+    """
     daemon.audio_buffer.stop_recording.return_value = "/tmp/audio.flac"
     daemon._executor = mock.MagicMock()
+
+    # 1. CALL_START: el daemon identifica grupo y SSI y avisa al canal Zello
+    daemon._handle_event(PEIEvent(type="CALL_START", grupo=36001, ssi=12345), streamer=zello)
+    assert daemon._current_grupo == 36001
+    assert daemon._current_ssi   == 12345
+    zello.send_text_message.assert_called_once()
+
+    # 2. PTT_START: el operador empieza a hablar
     daemon._handle_event(PEIEvent(type="PTT_START"), streamer=zello)
-    assert daemon.audio_buffer.start_recording.called
-    assert zello.call_start.called
+    daemon.audio_buffer.start_recording.assert_called_once()
+    zello.call_start.assert_called_once()
+    assert daemon._recording_start_time is not None
+
+    # 3. PTT_END: el operador deja de hablar
     daemon._handle_event(PEIEvent(type="PTT_END"), streamer=zello)
-    assert daemon.audio_buffer.stop_recording.called
-    assert zello.call_end.called
-    assert daemon._executor.submit.called
+    daemon.audio_buffer.stop_recording.assert_called_once()
+    zello.call_end.assert_called_once()
+    daemon._executor.submit.assert_called_once()
+    assert daemon._recording_start_time is None
+
+
+def test_ciclo_completo_ptt_sin_audio(daemon, zello):
+    """
+    Si stop_recording devuelve None (sin frames), no se encola transcripcion
+    pero el stream Zello se cierra correctamente.
+    """
+    daemon.audio_buffer.stop_recording.return_value = None
+    daemon._executor = mock.MagicMock()
+
+    daemon._handle_event(PEIEvent(type="PTT_START"), streamer=zello)
+    daemon._handle_event(PEIEvent(type="PTT_END"),   streamer=zello)
+
+    zello.call_start.assert_called_once()
+    zello.call_end.assert_called_once()
+    daemon._executor.submit.assert_not_called()
+
+
+def test_ciclo_completo_ptt_rtmp(daemon):
+    """
+    Con RTMP (no Zello), PTT_START/END solo controlan la grabacion;
+    no se llama a call_start/call_end.
+    """
+    rtmp = mock.MagicMock(spec=["send_audio", "stop", "running"])
+    daemon.audio_buffer.stop_recording.return_value = "/tmp/audio.flac"
+    daemon._executor = mock.MagicMock()
+
+    daemon._handle_event(PEIEvent(type="PTT_START"), streamer=rtmp)
+    daemon._handle_event(PEIEvent(type="PTT_END"),   streamer=rtmp)
+
+    daemon.audio_buffer.start_recording.assert_called_once()
+    daemon.audio_buffer.stop_recording.assert_called_once()
+    daemon._executor.submit.assert_called_once()
+    # RTMP no tiene call_start/call_end en su spec
+    assert not hasattr(rtmp, "call_start")
+    assert not hasattr(rtmp, "call_end")
+
+
+def test_ciclo_call_end_resetea_grupo_y_ssi(daemon, zello):
+    """
+    Despues de CALL_END, el daemon debe resetear grupo y SSI a 0.
+    """
+    daemon._handle_event(PEIEvent(type="CALL_START", grupo=36001, ssi=12345), streamer=zello)
+    daemon._handle_event(PEIEvent(type="PTT_START"), streamer=zello)
+    daemon.audio_buffer.stop_recording.return_value = None
+    daemon._handle_event(PEIEvent(type="PTT_END"),  streamer=zello)
+    daemon._handle_event(PEIEvent(type="CALL_END"), streamer=zello)
+
+    assert daemon._current_grupo == 0
+    assert daemon._current_ssi   == 0
 
 
 # ---------------------------------------------------------------------------
