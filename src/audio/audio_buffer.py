@@ -1,4 +1,5 @@
 import queue
+import threading
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
@@ -30,6 +31,10 @@ class AudioBuffer:
         # Cola para streaming -- tamano acotado; si el streamer no consume se descarta el chunk mas antiguo
         self._stream_queue = queue.Queue(maxsize=STREAM_QUEUE_MAXSIZE)
 
+        # Lock para proteger el acceso a _record_buffer.queue desde start_recording()
+        # (el callback de sounddevice corre en un hilo del SO separado)
+        self._buffer_lock = threading.Lock()
+
         self.recording = False
         self.frames = []
         self._stream = None
@@ -53,10 +58,11 @@ class AudioBuffer:
 
             chunk = indata.copy()
 
-            # Cola de grabacion: pre-buffer circular
-            if self._record_buffer.full():
-                self._record_buffer.get_nowait()
-            self._record_buffer.put_nowait(chunk)
+            # Cola de grabacion: pre-buffer circular (protegido con lock)
+            with self._buffer_lock:
+                if self._record_buffer.full():
+                    self._record_buffer.get_nowait()
+                self._record_buffer.put_nowait(chunk)
 
             # Cola de streaming: si esta llena, descartamos el chunk mas antiguo antes de insertar
             if self._stream_queue.full():
@@ -84,8 +90,11 @@ class AudioBuffer:
         logger.info("AudioBuffer stream iniciado")
 
     def start_recording(self):
-        # Incluir el pre-buffer completo como inicio de la grabacion
-        self.frames = list(self._record_buffer.queue)
+        # Snapshot thread-safe del pre-buffer como inicio de la grabacion.
+        # El lock evita que el callback de sounddevice modifique la deque
+        # interna mientras la copiamos.
+        with self._buffer_lock:
+            self.frames = list(self._record_buffer.queue)
         self.recording = True
         logger.info("Grabacion iniciada")
 

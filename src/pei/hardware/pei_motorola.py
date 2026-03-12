@@ -55,7 +55,9 @@ class MotorolaPEI:
         if not _RE_SCAN_LIST.match(scan_list):
             logger.error(f"[PEI] Scan list rechazada por formato inválido: '{scan_list}'")
             return
-        cmd = f"AT+CGSSI={scan_list}"
+        # AT+CTSL: comando ETSI EN 300 392-5 para activar una scan list por nombre.
+        # (Anteriormente se usaba AT+CGSSI por error, que es el comando de consulta de GSSI.)
+        cmd = f"AT+CTSL={scan_list}"
         logger.info(f"[PEI] Cambiando Scan List -> {scan_list}")
         resp = self.send(cmd)
         logger.info(f"[PEI] Radio respondió: {resp}")
