@@ -12,7 +12,7 @@ Sistema de monitorizacion de redes TETRA sobre Raspberry Pi. Escucha eventos PTT
 * Speech-to-Text — OpenAI Whisper
 * Notificaciones — Telegram Bot API + Email (SMTP)
 * PostgreSQL — almacenamiento de llamadas, catalogo de grupos y scan lists
-* Streaming de audio — Icecast o RTMP
+* Streaming de audio — Zello (PTT-aware), Icecast o RTMP
 * API REST — FastAPI con autenticacion JWT + rate limiting
 * HTTPS opcional — nginx como proxy inverso con TLS
 
@@ -39,7 +39,8 @@ flowchart TD
 
     DB[("PostgreSQL (llamadas / grupos)")]
     BOT["Telegram Bot"] -->|alerta| USER["Operador"]
-    AUDIO -->|stream| ICE["Icecast / RTMP"]
+    AUDIO -->|stream continuo| ICE["Icecast / RTMP"]
+    AUDIO -->|stream PTT| ZEL["Zello"]
     API -->|HTTP/HTTPS| CLIENT["Cliente REST"]
     NGINX["nginx (opcional, TLS proxy)"] --> API
 ```
@@ -99,10 +100,18 @@ JWT_SECRET=genera_un_secreto_largo_y_aleatorio
 API_USER=admin
 # Hash bcrypt de la contrasena — genera con: make set-password
 API_PASSWORD_HASH=$2b$12$...
+
+# Solo si features.streaming_enabled: true y streaming.zello.enabled: true
+# Obtener credenciales en: https://github.com/zelloptt/zello-channel-api
+ZELLO_USERNAME=
+ZELLO_PASSWORD=
+ZELLO_TOKEN=
+ZELLO_CHANNEL=
 ```
 
 > `TELEGRAM_TOKEN` y `TELEGRAM_CHAT_ID` solo son obligatorias si `features.telegram_enabled: true` en `config.yaml`.
 > `EMAIL_USER` y `EMAIL_PASSWORD` solo son obligatorias si `features.email_enabled: true` en `config.yaml`.
+> Las variables `ZELLO_*` solo son obligatorias si `streaming.zello.enabled: true` en `config.yaml`.
 
 ---
 
@@ -163,6 +172,51 @@ make status     # estado del servicio
 make restart    # reiniciar
 make stop       # parar
 ```
+
+---
+
+## Streaming de audio
+
+El sistema soporta tres backends de streaming, configurados en la seccion `streaming` de `config/config.yaml`. Solo puede estar activo uno a la vez. La prioridad es: **Zello > RTMP > Icecast**.
+
+### Zello (PTT-aware) — recomendado para TETRA
+
+Zello funciona de forma nativa con el modelo PTT de TETRA: abre el stream al detectar `PTT_START` y lo cierra al detectar `PTT_END`. No emite audio en silencio entre transmisiones.
+
+```yaml
+# config/config.yaml
+streaming:
+  zello:
+    enabled: true
+    channel: "mi-canal-tetra"
+```
+
+```env
+# .env
+ZELLO_USERNAME=usuario
+ZELLO_PASSWORD=contrasena
+ZELLO_TOKEN=token_de_desarrollador
+ZELLO_CHANNEL=mi-canal-tetra   # opcional, sobreescribe el valor de config.yaml
+```
+
+Las credenciales de desarrollador se obtienen en [github.com/zelloptt/zello-channel-api](https://github.com/zelloptt/zello-channel-api).
+
+Instalar dependencias adicionales (comentadas por defecto en `requirements.txt`):
+```bash
+pip install websockets opuslib
+```
+
+### RTMP / Icecast (streaming continuo)
+
+```yaml
+# config/config.yaml
+streaming:
+  bitrate: "128k"
+  rtmp_url: "rtmp://localhost/live/tetra"       # RTMP
+  # icecast_url: "icecast://source:pass@localhost:8000/tetra"  # Icecast
+```
+
+Estos backends emiten audio de forma continua independientemente de si hay PTT activo. Requieren `ffmpeg` instalado (incluido en `make setup`).
 
 ---
 
