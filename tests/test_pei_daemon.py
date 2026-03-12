@@ -37,8 +37,6 @@ _fake_app_state = _FakeAppState()
 def reset_app_state(monkeypatch):
     _fake_app_state.radio_connected = False
     monkeypatch.setattr("pei.daemon.pei_daemon.app_state", _fake_app_state, raising=False)
-    import importlib, sys
-    # Aseguramos que el modulo app_state mockeado esta disponible en el path
     sys.modules["app_state"] = mock.MagicMock(radio_connected=False)
     yield
     sys.modules["app_state"].radio_connected = False
@@ -172,7 +170,6 @@ def test_watchdog_solicita_reconexion_si_timeout():
     d = _make_daemon(watchdog_timeout=1)
     d._last_event_time = time.monotonic() - 10
     sys.modules["app_state"].radio_connected = True
-    # Simula lo que hace el bucle watchdog
     elapsed = time.monotonic() - d._last_event_time
     if elapsed > d.watchdog_timeout:
         d._reconnect_requested.set()
@@ -193,7 +190,6 @@ def test_watchdog_no_actua_si_radio_desconectada():
     d = _make_daemon(watchdog_timeout=1)
     d._last_event_time = time.monotonic() - 100
     sys.modules["app_state"].radio_connected = False
-    # El watchdog no debe actuar si radio_connected=False
     if sys.modules["app_state"].radio_connected:
         elapsed = time.monotonic() - d._last_event_time
         if elapsed > d.watchdog_timeout:
