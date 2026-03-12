@@ -1,82 +1,43 @@
 # Changelog
 
-Todos los cambios notables de este proyecto se documentan aquí.
-Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
-Versionado según [Semantic Versioning](https://semver.org/lang/es/).
-
----
-
 ## [Unreleased]
 
----
-
-## [1.2.0] - 2026-03-11
-
-### Added
-- `EmailNotifier` (`src/integrations/email_notifier.py`): notificaciones SMTP para eventos de sistema (startup, shutdown, radio_disconnected, radio_connected)
-- Sección `email:` en `config.yaml` con flags configurables por evento y soporte STARTTLS
-- Variables de entorno `EMAIL_USER` y `EMAIL_PASSWORD` para credenciales SMTP
-- `.env.example` con todas las variables necesarias documentadas
-- Endpoint `GET /keywords`: lista keywords activas
-- Endpoint `POST /keywords`: añade keyword con recarga en caliente
-- Endpoint `DELETE /keywords/{keyword}`: elimina keyword con recarga en caliente
-- Watchdog del daemon PEI: hilo separado que detecta inactividad y solicita reconexion
-- Límite de duración de grabación (`max_recording_seconds`): corte automático si PTT_END no llega
-- Flag `relevant_calls` en `telegram.alerts` para desactivar notificaciones de llamadas con keyword
-- `_stream_queue` en `AudioBuffer` con `maxsize` acotado (160 chunks, ~10s) para evitar crecimiento ilimitado de RAM
-- `KeywordFilter` crea `keywords.yaml` vacío automáticamente si no existe al arrancar
-
-### Changed
-- Telegram queda solo para eventos operativos: llamadas con keyword y cambios de afiliación
-- Eventos de sistema (startup, shutdown, radio_disconnected) migrados a `EmailNotifier`
-- `/health` devuelve HTTP 503 cuando `status == "degraded"` (antes siempre 200)
-- `shutdown()` del daemon PEI no dispara alerta de radio desconectada (apagado voluntario)
-- `datetime.utcnow()` reemplazado por `datetime.now(timezone.utc)` (deprecated en Python 3.12+)
-
 ### Fixed
-- `smtp_mock` en tests parchaba `smtplib.SMTP` globalmente en vez de en el namespace correcto
-- `test_reintento_en_error_transitorio`: cada reintento SMTP abre una conexión nueva, el test ahora lo refleja correctamente
-- `reset_mock()` condicional en `_make_daemon` cuando `email=None`
-- Subject con caracteres Unicode codificado en quoted-printable: tests ahora decodifican antes de comparar
+- `AudioBuffer.start_recording()`: race condition al copiar el pre-buffer desde el callback de sounddevice — añadido `threading.Lock` para proteger el acceso a `_record_buffer.queue`
+- `ZelloStreamer.send_audio()`: import de `numpy` movido al nivel de módulo junto al resto de dependencias opcionales (era un import dentro del hot path de audio)
+- `pei_motorola.set_scan_list()`: comando AT corregido de `AT+CGSSI` (consulta de GSSI) a `AT+CTSL` (cambio de scan list según ETSI EN 300 392-5)
+- `TelegramBot._send_with_retry()`: los envíos ya no bloquean el hilo del daemon PEI — se procesan en un hilo dedicado via `queue.Queue`
+- `main._init_streaming()`: advertencia explícita si `streaming_enabled=true` pero no hay ninguna URL configurada
+- `app_state.refresh_tokens`: movido de atributo de clase a atributo de instancia para evitar estado compartido entre instancias
 
-### Removed / Cleaned
-- `TelegramBot`: eliminados `notificar_startup`, `notificar_shutdown`, `notificar_radio_conectada`, `notificar_radio_desconectada` (movidos a `EmailNotifier`)
-- `core/database.py`, `core/radio_config.py`, `core/scan_config.py`: ficheros vestigio vaciados
+### Refactored
+- `TelegramBot`: envíos Telegram desacoplados del hilo principal mediante cola FIFO + hilo daemon `telegram-sender`
+- `LlamadasDB`: métricas de salud (`calls_today`, `last_call_at`) movidas a `get_health_metrics()` — antes se hacían queries directas desde `api.py` rompiendo la separación de capas
+- `api.py`: cuatro helpers `_require_*()` unificados en `_require(attr, detail)` genérico
+- `streaming/__init__.py`: activación de Zello unificada con RTMP/Icecast — se usa `zello_url` en lugar de `zello.enabled + channel`; credenciales Zello en `.env`
+
+### Added
+- Tests de integración: ciclo completo `CALL_START → PTT_START → PTT_END` con Zello, RTMP y sin streamer (`test_pei_daemon.py`)
+- Tests de `TelegramBot` incluyendo verificación del flujo end-to-end via cola async (`test_telegram_bot.py`)
 
 ---
 
-## [1.1.0] - 2026-03-10
+## [0.1.0] — 2026-01-xx — Primera versión funcional
 
 ### Added
-- Tests unitarios para `KeywordFilter`, parser PEI (`MotorolaPEI`) y `AfiliacionConfig` (37 tests, 0 fallos)
-- GitHub Actions CI: lint con `ruff` + `pytest` en cada push/PR a `develop` y `master`
-- Rama `develop` como rama de trabajo; `master` queda protegida como rama de producción
-- `make reload-grupos`: recarga el catálogo de grupos, carpetas y scan lists desde `config/grupos.yaml` sin reiniciar el servicio
-- Script `scripts/reload_grupos.py` con soporte `--dry-run` y `--yes`
-
-### Changed
-- `src/main.py` refactorizado: código plano extraído en funciones de inicialización (`_load_config`, `_validate_env`, `_init_db`, `_init_bot`, `_init_audio`, `_init_pei`, `_init_api`, `_init_streaming`)
-
-### Fixed
-- Errores de lint `ruff`: E402 en imports post-`load_dotenv`, E701 en ifs en una línea, F401 en imports sin usar
-
----
-
-## [1.0.0] - 2026-03-04
-
-### Added
-- Captura de eventos TETRA vía PEI Motorola (comandos AT sobre puerto serie)
-- Grabación de audio con `sounddevice` + `soundfile` y prebuffer configurable
-- Transcripción Speech-to-Text con OpenAI Whisper
-- Filtro de palabras clave con recarga en caliente desde `config/keywords.yaml`
-- Notificaciones por Telegram Bot API
-- Almacenamiento de llamadas en PostgreSQL con pool de conexiones
-- Catálogo de grupos, carpetas y scan lists en BD con semilla desde YAML
-- API REST con FastAPI: autenticación JWT + refresh tokens, rate limiting, CORS
-- Endpoints: `/health`, `/auth/*`, `/calls`, `/afiliacion`, `/groups`, `/folders`, `/scan-lists`
-- Streaming de audio vía Icecast o RTMP
-- Proxy inverso nginx con TLS (certificado autofirmado, opcional)
+- Captura de eventos TETRA via Motorola PEI (AT commands sobre puerto serie)
+- Grabación de audio con pre-buffer configurable (`sounddevice` + `soundfile` FLAC)
+- Speech-to-Text con OpenAI Whisper (hilo dedicado, no bloquea el daemon)
+- Filtro de palabras clave con recarga en caliente desde `keywords.yaml`
+- Notificaciones Telegram y Email (SMTP) con flags de activación por tipo de evento
+- Almacenamiento de llamadas en PostgreSQL con pool de conexiones (`psycopg2`)
+- API REST con FastAPI: JWT auth, rate limiting, CORS, modo standalone
+- Endpoints: `/calls`, `/keywords`, `/afiliacion`, `/groups`, `/folders`, `/scan-lists`
+- Streaming de audio: Zello (PTT-aware), RTMP y Icecast (continuos)
+- Watchdog de reconexión automática del puerto serie
+- Timeout máximo de grabación configurable
+- Limpieza periódica de ficheros FLAC según `retention_days`
+- Semilla inicial de grupos, carpetas y scan lists desde `grupos.yaml`
 - Servicio systemd con `make install-service`
-- Makefile con targets: `setup`, `start`, `stop`, `restart`, `logs`, `update`, `set-password`, `setup-https`
-- Configuración por flags en `config/config.yaml`: grabación, procesado PEI, Telegram, streaming
-- Validación regex de comandos AT antes de enviarlos a la radio
+- HTTPS opcional con nginx como proxy inverso (certificado autofirmado RSA 4096)
+- `make init/setup/start/stop/restart/logs/backup-db/update/reload-grupos`
