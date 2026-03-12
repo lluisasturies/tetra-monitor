@@ -18,12 +18,16 @@ python-multipart==0.0.9
 slowapi==0.1.9
 bcrypt==4.2.1
 
-# Comunicación serie
+# Comunicacion serie
 pyserial==3.5
 
-# Configuración
+# Configuracion
 pyyaml==6.0.1
 python-dotenv==1.0.1
 
 # Telegram
 requests==2.31.0
+
+# Zello (opcional - solo si streaming.zello.enabled: true)
+# websockets==12.0
+# opuslib==3.0.1

@@ -1,0 +1,238 @@
+import asyncio
+import threading
+import json
+import struct
+import time
+import os
+from core.logger import logger
+
+try:
+    import websockets
+    import opuslib
+    _ZELLO_DEPS_AVAILABLE = True
+except ImportError:
+    _ZELLO_DEPS_AVAILABLE = False
+
+
+ZELLO_WSS_URL = "wss://zello.io/ws"
+
+# Parametros Opus requeridos por Zello
+OPUS_SAMPLE_RATE  = 16000
+OPUS_CHANNELS     = 1
+OPUS_FRAME_MS     = 60      # Zello requiere frames de 60ms
+OPUS_FRAME_SIZE   = int(OPUS_SAMPLE_RATE * OPUS_FRAME_MS / 1000)  # 960 muestras
+OPUS_BITRATE      = 16000
+
+
+class ZelloStreamer:
+    """
+    Streamer para Zello via WebSocket.
+
+    A diferencia de RTMP/Icecast (audio continuo), Zello es PTT:
+    - call_start()  -> abre un stream de voz en el canal
+    - send_audio()  -> envia chunks de audio codificados en Opus
+    - call_end()    -> cierra el stream
+
+    El bucle asyncio corre en un hilo dedicado para no bloquear el daemon PEI.
+
+    IMPORTANTE: Este streamer requiere credenciales de desarrollador Zello.
+    Consulta https://github.com/zelloptt/zello-channel-api para obtenerlas.
+    """
+
+    def __init__(self, username: str, password: str, token: str, channel: str,
+                 samplerate: int = 16000, channels: int = 1, **kwargs):
+        if not _ZELLO_DEPS_AVAILABLE:
+            raise RuntimeError(
+                "Dependencias de Zello no instaladas. "
+                "Ejecuta: pip install websockets opuslib"
+            )
+
+        self.username   = username
+        self.password   = password
+        self.token      = token
+        self.channel    = channel
+        self.samplerate = samplerate
+        self.channels   = channels
+
+        self.running      = False
+        self._ws          = None
+        self._stream_id   = None
+        self._packet_id   = 0
+        self._in_call     = False
+        self._audio_queue = asyncio.Queue()
+        self._loop        = asyncio.new_event_loop()
+        self._encoder     = opuslib.Encoder(OPUS_SAMPLE_RATE, OPUS_CHANNELS, opuslib.APPLICATION_VOIP)
+        self._encoder.bitrate = OPUS_BITRATE
+        self._buf         = b""   # buffer de muestras PCM pendientes
+
+        self._thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._thread.start()
+        logger.info(f"[Zello] Streamer iniciado -> canal '{self.channel}'")
+
+    # ------------------------------------------------------------------
+    # Hilo asyncio
+    # ------------------------------------------------------------------
+
+    def _run_loop(self):
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_until_complete(self._connect_loop())
+
+    async def _connect_loop(self):
+        """Reconecta automaticamente si se cae la conexion WebSocket."""
+        while True:
+            try:
+                async with websockets.connect(ZELLO_WSS_URL) as ws:
+                    self._ws = ws
+                    self.running = True
+                    logger.info("[Zello] WebSocket conectado")
+                    await self._authenticate()
+                    await self._listen()
+            except Exception as e:
+                logger.error(f"[Zello] Error de conexion: {e}. Reintentando en 10s...")
+                self.running = False
+                self._ws = None
+                await asyncio.sleep(10)
+
+    async def _authenticate(self):
+        auth = {
+            "command": "logon",
+            "seq": 1,
+            "auth_token": self.token,
+            "username": self.username,
+            "password": self.password,
+            "channel": self.channel,
+        }
+        await self._ws.send(json.dumps(auth))
+        resp = json.loads(await self._ws.recv())
+        if not resp.get("success"):
+            raise RuntimeError(f"[Zello] Autenticacion fallida: {resp}")
+        logger.info(f"[Zello] Autenticado en canal '{self.channel}'")
+
+    async def _listen(self):
+        """Recibe mensajes del servidor y procesa la cola de audio."""
+        async for message in self._ws:
+            if isinstance(message, str):
+                data = json.loads(message)
+                if data.get("command") == "on_stream_start":
+                    logger.debug(f"[Zello] Stream entrante: {data}")
+            # Los mensajes binarios son audio entrante de otros usuarios (ignorado)
+
+    # ------------------------------------------------------------------
+    # API publica — llamada desde el hilo principal via call_start/end
+    # ------------------------------------------------------------------
+
+    def call_start(self):
+        """Abre un stream PTT en Zello. Llamar cuando llega PTT_START de TETRA."""
+        if not self.running or self._in_call:
+            return
+        self._packet_id = 0
+        self._buf = b""
+        future = asyncio.run_coroutine_threadsafe(self._start_stream(), self._loop)
+        try:
+            self._stream_id = future.result(timeout=5)
+            self._in_call = True
+            logger.info(f"[Zello] Stream abierto (id={self._stream_id})")
+        except Exception as e:
+            logger.error(f"[Zello] No se pudo abrir stream: {e}")
+
+    def call_end(self):
+        """Cierra el stream PTT. Llamar cuando llega PTT_END de TETRA."""
+        if not self._in_call:
+            return
+        # Vacia el buffer con silencio si quedan muestras incompletas
+        if self._buf:
+            self._flush_buffer()
+        future = asyncio.run_coroutine_threadsafe(self._stop_stream(), self._loop)
+        try:
+            future.result(timeout=5)
+        except Exception as e:
+            logger.error(f"[Zello] Error cerrando stream: {e}")
+        self._in_call = False
+        self._stream_id = None
+        logger.info("[Zello] Stream cerrado")
+
+    def send_audio(self, audio):
+        """
+        Recibe un numpy array float32 y lo encola para enviar a Zello.
+        Solo envia si hay un stream PTT activo.
+        """
+        if not self._in_call or not self.running:
+            return
+        # Convertir float32 -> PCM16
+        import numpy as np
+        pcm16 = (audio * 32767).clip(-32768, 32767).astype(np.int16).tobytes()
+        self._buf += pcm16
+        self._flush_buffer()
+
+    def _flush_buffer(self):
+        """Codifica y envia todos los frames completos disponibles en el buffer."""
+        frame_bytes = OPUS_FRAME_SIZE * 2  # 2 bytes por muestra PCM16
+        while len(self._buf) >= frame_bytes:
+            frame = self._buf[:frame_bytes]
+            self._buf = self._buf[frame_bytes:]
+            encoded = self._encoder.encode(frame, OPUS_FRAME_SIZE)
+            asyncio.run_coroutine_threadsafe(
+                self._send_audio_packet(encoded), self._loop
+            )
+
+    # ------------------------------------------------------------------
+    # Corrutinas internas
+    # ------------------------------------------------------------------
+
+    async def _start_stream(self) -> int:
+        """
+        Envia start_stream y devuelve el stream_id asignado por el servidor.
+        Ver: https://github.com/zelloptt/zello-channel-api#startstream
+        """
+        cmd = {
+            "command": "start_stream",
+            "seq": 2,
+            "type": "audio",
+            "codec": "opus",
+            "codec_header": self._build_codec_header(),
+            "transaction_id": int(time.time()),
+        }
+        await self._ws.send(json.dumps(cmd))
+        resp = json.loads(await self._ws.recv())
+        if "stream_id" not in resp:
+            raise RuntimeError(f"start_stream fallo: {resp}")
+        return resp["stream_id"]
+
+    async def _stop_stream(self):
+        if self._stream_id is None:
+            return
+        cmd = {"command": "stop_stream", "stream_id": self._stream_id}
+        await self._ws.send(json.dumps(cmd))
+
+    async def _send_audio_packet(self, opus_data: bytes):
+        """
+        Formato del paquete binario Zello:
+          1 byte  tipo (0x01 = audio)
+          4 bytes stream_id (big-endian)
+          4 bytes packet_id (big-endian)
+          N bytes datos Opus
+        """
+        if self._stream_id is None or not self.running:
+            return
+        header = struct.pack(">BII", 0x01, self._stream_id, self._packet_id)
+        self._packet_id += 1
+        try:
+            await self._ws.send(header + opus_data)
+        except Exception as e:
+            logger.error(f"[Zello] Error enviando paquete de audio: {e}")
+
+    def _build_codec_header(self) -> str:
+        """
+        Cabecera Opus codificada en base64 segun el protocolo Zello.
+        Formato: sample_rate(2) + frames_per_packet(1) + frame_size_ms(1)
+        """
+        import base64
+        header = struct.pack(">HBB", OPUS_SAMPLE_RATE, 1, OPUS_FRAME_MS)
+        return base64.b64encode(header).decode()
+
+    def stop(self):
+        if self._in_call:
+            self.call_end()
+        self.running = False
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        logger.info("[Zello] Streamer detenido")
