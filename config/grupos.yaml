@@ -1,6 +1,0 @@
-# Este fichero esta ignorado por Git y no se versiona.
-# Copia grupos.yaml.example y renombralo a grupos.yaml:
-#
-#   cp config/grupos.yaml.example config/grupos.yaml
-#
-# O ejecuta directamente: make init
