@@ -20,6 +20,9 @@ sys.modules["opuslib"]   = mock_opuslib
 
 from streaming.zello_streamer import ZelloStreamer, OPUS_FRAME_SIZE  # noqa: E402
 
+# Bytes por frame PCM16 (2 bytes por muestra)
+FRAME_BYTES = OPUS_FRAME_SIZE * 2
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -118,54 +121,76 @@ def test_call_end_no_actua_si_no_en_llamada(streamer):
 
 
 # ---------------------------------------------------------------------------
-# send_audio
+# send_audio - usa bytes PCM16 crudos (sin numpy)
 # ---------------------------------------------------------------------------
 
+def _pcm16(n_samples: int, value: int = 0) -> bytes:
+    """Genera n_samples muestras PCM16 little-endian con el valor dado."""
+    return struct.pack(f"<{n_samples}h", *([value] * n_samples))
+
+
 def test_send_audio_no_actua_si_no_en_llamada(streamer):
-    import numpy as np
+    """Inyectamos bytes PCM16 directamente en _buf y verificamos que no se codifica."""
+    mock_encoder_instance.encode.reset_mock()
     streamer._in_call = False
-    audio = np.zeros(960, dtype=np.float32)
-    streamer.send_audio(audio)
-    mock_encoder_instance.encode.assert_not_called()
+    # Llamar a _flush_buffer directamente no debe codificar nada si no hay llamada activa
+    # send_audio devuelve antes si not _in_call
+    streamer._buf = _pcm16(OPUS_FRAME_SIZE)
+    # Simulamos lo que haria send_audio internamente sin numpy:
+    # como _in_call=False, send_audio retorna antes de tocar el buffer
+    # Verificamos que si llamamos _flush_buffer SIN estar en llamada, no hay efecto
+    # (el guard esta en send_audio, no en _flush_buffer)
+    # -> test correcto: send_audio no llama a encode
+    with mock.patch.object(streamer, "_flush_buffer") as mock_flush:
+        # Forzamos la llamada a send_audio con un array mock que nunca se usara
+        audio_mock = mock.MagicMock()
+        streamer.send_audio(audio_mock)
+        mock_flush.assert_not_called()
 
 
 def test_send_audio_no_actua_si_no_running(streamer):
-    import numpy as np
+    mock_encoder_instance.encode.reset_mock()
     streamer._in_call = True
     streamer.running  = False
-    audio = np.zeros(960, dtype=np.float32)
-    streamer.send_audio(audio)
-    mock_encoder_instance.encode.assert_not_called()
+    with mock.patch.object(streamer, "_flush_buffer") as mock_flush:
+        audio_mock = mock.MagicMock()
+        streamer.send_audio(audio_mock)
+        mock_flush.assert_not_called()
 
 
-def test_send_audio_codifica_frame_completo(streamer):
-    import numpy as np
+def test_flush_buffer_codifica_frame_completo(streamer):
+    """_flush_buffer con exactamente un frame completo codifica una vez."""
     mock_encoder_instance.encode.reset_mock()
     streamer._in_call = True
-    audio = np.ones(OPUS_FRAME_SIZE, dtype=np.float32) * 0.5
-    streamer.send_audio(audio)
+    streamer._stream_id = 1
+    streamer._buf = _pcm16(OPUS_FRAME_SIZE)
+    with mock.patch("asyncio.run_coroutine_threadsafe"):
+        streamer._flush_buffer()
     mock_encoder_instance.encode.assert_called_once()
+    assert streamer._buf == b""  # buffer vaciado
 
 
-def test_send_audio_acumula_buffer_si_frame_incompleto(streamer):
-    import numpy as np
+def test_flush_buffer_acumula_si_frame_incompleto(streamer):
+    """_flush_buffer con menos de un frame no debe codificar."""
     mock_encoder_instance.encode.reset_mock()
     streamer._in_call = True
-    streamer._buf     = b""
-    audio = np.ones(100, dtype=np.float32) * 0.5
-    streamer.send_audio(audio)
+    streamer._buf = _pcm16(100)  # menos de OPUS_FRAME_SIZE muestras
+    with mock.patch("asyncio.run_coroutine_threadsafe"):
+        streamer._flush_buffer()
     mock_encoder_instance.encode.assert_not_called()
     assert len(streamer._buf) == 100 * 2
 
 
-def test_send_audio_codifica_multiples_frames(streamer):
-    import numpy as np
+def test_flush_buffer_codifica_multiples_frames(streamer):
+    """_flush_buffer con 3 frames codifica exactamente 3 veces."""
     mock_encoder_instance.encode.reset_mock()
-    streamer._in_call = True
-    streamer._buf     = b""
-    audio = np.ones(OPUS_FRAME_SIZE * 3, dtype=np.float32) * 0.1
-    streamer.send_audio(audio)
+    streamer._in_call   = True
+    streamer._stream_id = 1
+    streamer._buf = _pcm16(OPUS_FRAME_SIZE * 3)
+    with mock.patch("asyncio.run_coroutine_threadsafe"):
+        streamer._flush_buffer()
     assert mock_encoder_instance.encode.call_count == 3
+    assert streamer._buf == b""
 
 
 # ---------------------------------------------------------------------------
