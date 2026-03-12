@@ -1,13 +1,34 @@
+import os
+import sys
+import yaml
+import signal
+import threading
+import uvicorn
 from dotenv import load_dotenv
-from importlib.metadata import version
 
 load_dotenv()
 
+from core.logger import logger, set_level  # noqa: E402
+from core.afiliacion import AfiliacionConfig  # noqa: E402
+from audio.audio_buffer import AudioBuffer  # noqa: E402
+from core.stt_processor import STTProcessor  # noqa: E402
+from filters.keyword_filter import KeywordFilter  # noqa: E402
+from integrations.telegram_bot import TelegramBot  # noqa: E402
+from integrations.email_notifier import EmailNotifier  # noqa: E402
+from db.pool import DBPool  # noqa: E402
+from db.llamadas import LlamadasDB  # noqa: E402
+from db.grupos import GruposDB  # noqa: E402
+from db.usuarios import UsuariosDB  # noqa: E402
+from pei.hardware.pei_motorola import MotorolaPEI  # noqa: E402
+from pei.daemon.pei_daemon import PEIDaemon  # noqa: E402
+from streaming import create_streamer  # noqa: E402
+from app_state import app_state  # noqa: E402
+
 print()
-print("░▀█▀░█▀▀░▀█▀░█▀▄░█▀▀░░░░░█▄█░█▀▀░█▀▀░▀█▀░▀█▀░█▀▀░█▀▄")
-print("░░█░░█▀▀░░█░░█▀▄░█▀▀░▄▄▄░█░█░█░░░█░█░░█░░░█░░█░█░█▀▄")
-print("░░▀░░▀▀▀░░▀░░▀░▀░▀░▀░░░░░▀░▀░▀▀▀░▀▀▀░▀▀▀░░▀░░▀▀▀░▀░▀")
-print("Versión", version("tetra-monitor") - 2026 (c) Lluis de la Rubia / LluisAsturies")
+print("\u2591\u25c0\u2588\u2588\u2588\u2591\u2588\u2588\u2588\u2591\u25c0\u2588\u2588\u2588\u2591\u2588\u2588\u2584\u2591\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2588\u2584\u2588\u2591\u2588\u2588\u2588\u2591\u2588\u2588\u2588\u2591\u25c0\u2588\u2588\u2588\u2591\u25c0\u2588\u2588\u2588\u2591\u2588\u2588\u2588\u2591\u2588\u2588\u2584")
+print("\u2591\u2591\u2588\u2591\u2591\u2588\u2588\u2588\u2591\u2591\u2588\u2591\u2591\u2588\u2584\u2588\u2591\u2591\u2588\u2588\u2588\u2591\u25c4\u25c4\u25c4\u2591\u2588\u2591\u2588\u2591\u2588\u2591\u2591\u2591\u2591\u2588\u2591\u2588\u2591\u2591\u2588\u2591\u2591\u2591\u2588\u2591\u2591\u2591\u2588\u2591\u2588\u2591\u2588\u2591\u2588\u2584\u2588")
+print("\u2591\u2591\u25c0\u2591\u2591\u25c0\u25c0\u25c0\u2591\u2591\u25c0\u2591\u2591\u25c0\u2591\u25c0\u2591\u25c0\u2591\u25c0\u2591\u2591\u2591\u2591\u2591\u25c0\u2591\u25c0\u2591\u25c0\u25c0\u25c0\u2591\u25c0\u25c0\u25c0\u2591\u25c0\u25c0\u25c0\u2591\u2591\u25c0\u2591\u2591\u25c0\u25c0\u25c0\u2591\u25c0\u2591\u25c0")
+print("2026 (c) Lluis de la Rubia / LluisAsturies")
 print()
 
 PROJECT_ROOT    = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -78,7 +99,7 @@ def _validate_env(cfg: dict) -> dict:
     }
 
 
-def _init_db(cfg: dict, env: dict) -> tuple[DBPool, LlamadasDB, GruposDB, UsuariosDB]:
+def _init_db(cfg: dict, env: dict) -> tuple:
     pool = DBPool(
         host=cfg["database"]["host"],
         port=cfg["database"]["port"],
@@ -97,7 +118,6 @@ def _init_db(cfg: dict, env: dict) -> tuple[DBPool, LlamadasDB, GruposDB, Usuari
 
     grupos_db.seed_from_yaml(GRUPOS_PATH)
 
-    # Crear usuario admin inicial desde .env si la tabla esta vacia
     api_user = os.getenv("API_USER", "")
     api_hash = os.getenv("API_PASSWORD_HASH", "")
     if api_user and api_hash:
@@ -142,7 +162,7 @@ def _init_email(cfg: dict, env: dict) -> EmailNotifier:
     return notifier
 
 
-def _init_audio(cfg: dict, audio_output_dir: str) -> tuple[AudioBuffer, STTProcessor, KeywordFilter]:
+def _init_audio(cfg: dict, audio_output_dir: str) -> tuple:
     try:
         audio_buffer = AudioBuffer(
             device_index=cfg["audio"].get("device_index", None),
@@ -208,7 +228,7 @@ def _init_api(cfg: dict) -> threading.Thread:
     return thread
 
 
-def _init_streaming(cfg: dict) -> object | None:
+def _init_streaming(cfg: dict):
     features   = cfg.get("features", {})
     stream_cfg = cfg.get("streaming", {})
 
