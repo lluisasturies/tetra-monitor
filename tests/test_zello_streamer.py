@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 # --- Mockear dependencias opcionales antes de importar el modulo ---
 mock_websockets = mock.MagicMock()
 mock_opuslib    = mock.MagicMock()
+mock_numpy      = mock.MagicMock()
 
 mock_encoder_instance = mock.MagicMock()
 mock_encoder_instance.encode.return_value = b"\x00" * 40
@@ -17,6 +18,7 @@ mock_opuslib.APPLICATION_VOIP = "voip"
 
 sys.modules["websockets"] = mock_websockets
 sys.modules["opuslib"]   = mock_opuslib
+sys.modules["numpy"]     = mock_numpy
 
 from streaming.zello_streamer import ZelloStreamer, OPUS_FRAME_SIZE  # noqa: E402
 

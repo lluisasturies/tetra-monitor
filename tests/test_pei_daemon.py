@@ -10,6 +10,7 @@ sys.modules.setdefault("serial",      mock.MagicMock())
 sys.modules.setdefault("sounddevice", mock.MagicMock())
 sys.modules.setdefault("soundfile",   mock.MagicMock())
 sys.modules.setdefault("whisper",     mock.MagicMock())
+sys.modules.setdefault("numpy",       mock.MagicMock())
 
 mock_websockets = mock.MagicMock()
 mock_opuslib    = mock.MagicMock()
@@ -38,8 +39,6 @@ def patch_app_state(monkeypatch):
     """
     Sustituye la variable 'app_state' en el namespace del modulo pei_daemon
     con una instancia fresca de _FakeAppState en cada test.
-    Como pei_daemon usa 'global app_state' en _set_radio_connected,
-    monkeypatch.setattr sobre el modulo es suficiente.
     """
     fake = _FakeAppState()
     monkeypatch.setattr(_pei_module, "app_state", fake)
@@ -60,11 +59,6 @@ def _make_grupos_db(mapping=None):
 
 
 def _make_daemon(**kwargs) -> PEIDaemon:
-    """
-    Crea un PEIDaemon con todos los colaboradores mockeados.
-    Despues de la construccion resetea bot y email para que los tests
-    no vean las llamadas que genera _init_radio internamente.
-    """
     bot        = kwargs.pop("bot",        mock.MagicMock())
     email      = kwargs.pop("email",      mock.MagicMock())
     grupos_db  = kwargs.pop("grupos_db",  None)
@@ -95,8 +89,6 @@ def _make_daemon(**kwargs) -> PEIDaemon:
     )
     defaults.update(kwargs)
     d = PEIDaemon(**defaults)
-    # Resetear bot y email: _init_radio ya los invoco, no queremos esas
-    # llamadas contaminando las aserciones de los tests.
     d.bot.reset_mock()
     if d.email is not None:
         d.email.reset_mock()
@@ -133,11 +125,7 @@ def zello() -> ZelloStreamer:
 # ---------------------------------------------------------------------------
 
 def test_set_radio_connected_true_notifica_email(patch_app_state):
-    """
-    Cuando el estado pasa de False -> True, email.notificar_radio_conectada
-    se llama exactamente una vez.
-    """
-    d = _make_daemon()  # tras __init__, app_state.radio_connected == True
+    d = _make_daemon()
     patch_app_state.radio_connected = False
     d._set_radio_connected(True)
     d.email.notificar_radio_conectada.assert_called_once()
@@ -145,15 +133,15 @@ def test_set_radio_connected_true_notifica_email(patch_app_state):
 
 
 def test_set_radio_connected_false_notifica_email(patch_app_state):
-    d = _make_daemon()  # app_state.radio_connected == True tras __init__
+    d = _make_daemon()
     d._set_radio_connected(False)
     d.email.notificar_radio_desconectada.assert_called_once()
     d.email.notificar_radio_conectada.assert_not_called()
 
 
 def test_set_radio_connected_mismo_estado_no_notifica(patch_app_state):
-    d = _make_daemon()  # app_state.radio_connected == True
-    d._set_radio_connected(True)  # mismo estado -> no notifica
+    d = _make_daemon()
+    d._set_radio_connected(True)
     d.email.notificar_radio_conectada.assert_not_called()
     d.email.notificar_radio_desconectada.assert_not_called()
 
@@ -162,11 +150,11 @@ def test_set_radio_connected_sin_email_no_falla(patch_app_state):
     patch_app_state.radio_connected = False
     d = _make_daemon(email=None)
     patch_app_state.radio_connected = False
-    d._set_radio_connected(True)  # no debe lanzar
+    d._set_radio_connected(True)
 
 
 def test_set_radio_connected_actualiza_bot_radio_active(patch_app_state):
-    d = _make_daemon()  # app_state.radio_connected == True tras __init__
+    d = _make_daemon()
     patch_app_state.radio_connected = False
     d.bot.radio_active = False
     d._set_radio_connected(True)
@@ -174,7 +162,7 @@ def test_set_radio_connected_actualiza_bot_radio_active(patch_app_state):
 
 
 # ---------------------------------------------------------------------------
-# Watchdog en hilo dedicado
+# Watchdog
 # ---------------------------------------------------------------------------
 
 def test_watchdog_desactivado_no_arranca_hilo():
@@ -389,7 +377,7 @@ def test_ptt_end_no_llama_call_end_en_streamer_no_zello(daemon):
 
 
 # ---------------------------------------------------------------------------
-# Test de integracion: ciclo completo CALL_START -> PTT_START -> PTT_END
+# Tests de integracion: ciclo completo CALL_START -> PTT_START -> PTT_END
 # ---------------------------------------------------------------------------
 
 def test_ciclo_completo_ptt_con_zello(daemon, zello):
@@ -402,19 +390,16 @@ def test_ciclo_completo_ptt_con_zello(daemon, zello):
     daemon.audio_buffer.stop_recording.return_value = "/tmp/audio.flac"
     daemon._executor = mock.MagicMock()
 
-    # 1. CALL_START: el daemon identifica grupo y SSI y avisa al canal Zello
     daemon._handle_event(PEIEvent(type="CALL_START", grupo=36001, ssi=12345), streamer=zello)
     assert daemon._current_grupo == 36001
     assert daemon._current_ssi   == 12345
     zello.send_text_message.assert_called_once()
 
-    # 2. PTT_START: el operador empieza a hablar
     daemon._handle_event(PEIEvent(type="PTT_START"), streamer=zello)
     daemon.audio_buffer.start_recording.assert_called_once()
     zello.call_start.assert_called_once()
     assert daemon._recording_start_time is not None
 
-    # 3. PTT_END: el operador deja de hablar
     daemon._handle_event(PEIEvent(type="PTT_END"), streamer=zello)
     daemon.audio_buffer.stop_recording.assert_called_once()
     zello.call_end.assert_called_once()
@@ -423,10 +408,6 @@ def test_ciclo_completo_ptt_con_zello(daemon, zello):
 
 
 def test_ciclo_completo_ptt_sin_audio(daemon, zello):
-    """
-    Si stop_recording devuelve None (sin frames), no se encola transcripcion
-    pero el stream Zello se cierra correctamente.
-    """
     daemon.audio_buffer.stop_recording.return_value = None
     daemon._executor = mock.MagicMock()
 
@@ -439,10 +420,6 @@ def test_ciclo_completo_ptt_sin_audio(daemon, zello):
 
 
 def test_ciclo_completo_ptt_rtmp(daemon):
-    """
-    Con RTMP (no Zello), PTT_START/END solo controlan la grabacion;
-    no se llama a call_start/call_end.
-    """
     rtmp = mock.MagicMock(spec=["send_audio", "stop", "running"])
     daemon.audio_buffer.stop_recording.return_value = "/tmp/audio.flac"
     daemon._executor = mock.MagicMock()
@@ -453,15 +430,11 @@ def test_ciclo_completo_ptt_rtmp(daemon):
     daemon.audio_buffer.start_recording.assert_called_once()
     daemon.audio_buffer.stop_recording.assert_called_once()
     daemon._executor.submit.assert_called_once()
-    # RTMP no tiene call_start/call_end en su spec
     assert not hasattr(rtmp, "call_start")
     assert not hasattr(rtmp, "call_end")
 
 
 def test_ciclo_call_end_resetea_grupo_y_ssi(daemon, zello):
-    """
-    Despues de CALL_END, el daemon debe resetear grupo y SSI a 0.
-    """
     daemon._handle_event(PEIEvent(type="CALL_START", grupo=36001, ssi=12345), streamer=zello)
     daemon._handle_event(PEIEvent(type="PTT_START"), streamer=zello)
     daemon.audio_buffer.stop_recording.return_value = None

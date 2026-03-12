@@ -3,12 +3,12 @@ import threading
 import json
 import struct
 import time
-import numpy as np
 from core.logger import logger
 
 try:
     import websockets
     import opuslib
+    import numpy as np
     _ZELLO_DEPS_AVAILABLE = True
 except ImportError:
     _ZELLO_DEPS_AVAILABLE = False
@@ -170,7 +170,6 @@ class ZelloStreamer:
     def send_audio(self, audio):
         if not self._in_call or not self.running:
             return
-        # numpy se importa a nivel de modulo (dependencia base del proyecto)
         pcm16 = (audio * 32767).clip(-32768, 32767).astype(np.int16).tobytes()
         self._buf += pcm16
         self._flush_buffer()
