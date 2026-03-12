@@ -1,17 +1,12 @@
-from .icecast_streamer import IcecastStreamer
-from .rtmp_streamer import RTMPStreamer
-from .zello_streamer import ZelloStreamer
-
-
 def create_streamer(config: dict):
     """
     Crea el streamer segun la configuracion.
 
     Los streamers son mutuamente excluyentes: solo se activa uno a la vez.
     Si se definen varias URLs se aplica esta prioridad y se avisa por log:
-      1. zello_url   — PTT-aware, credenciales sensibles en .env
-      2. rtmp_url    — streaming continuo via RTMP
-      3. icecast_url — streaming continuo via Icecast
+      1. zello_url   -- PTT-aware, credenciales sensibles en .env
+      2. rtmp_url    -- streaming continuo via RTMP
+      3. icecast_url -- streaming continuo via Icecast
 
     Para activar un streamer basta con definir su URL en config.yaml.
     Las credenciales de Zello van en .env:
@@ -28,8 +23,7 @@ def create_streamer(config: dict):
     rtmp_url    = config.get("rtmp_url",    "").strip()
     icecast_url = config.get("icecast_url", "").strip()
 
-    # Advertir si el usuario ha definido mas de una URL: solo la prioritaria
-    # se activara; las demas se ignoraran en silencio sin este aviso.
+    # Advertir si el usuario ha definido mas de una URL
     activas = [u for u in [zello_url, rtmp_url, icecast_url] if u]
     if len(activas) > 1:
         logger.warning(
@@ -39,6 +33,9 @@ def create_streamer(config: dict):
         )
 
     if zello_url:
+        # Import lazy: zello_streamer depende de websockets/opuslib/numpy que
+        # son opcionales y pueden no estar instalados en el entorno de CI.
+        from .zello_streamer import ZelloStreamer  # noqa: PLC0415
         username = os.getenv("ZELLO_USERNAME", "")
         password = os.getenv("ZELLO_PASSWORD", "")
         token    = os.getenv("ZELLO_TOKEN", "")
@@ -58,9 +55,11 @@ def create_streamer(config: dict):
         )
 
     if rtmp_url:
+        from .rtmp_streamer import RTMPStreamer  # noqa: PLC0415
         return RTMPStreamer(rtmp_url, samplerate=samplerate, channels=channels, bitrate=bitrate)
 
     if icecast_url:
+        from .icecast_streamer import IcecastStreamer  # noqa: PLC0415
         return IcecastStreamer(icecast_url, samplerate=samplerate, channels=channels, bitrate=bitrate)
 
     return None

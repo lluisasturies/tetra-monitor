@@ -7,7 +7,10 @@ from core.afiliacion import AfiliacionConfig
 from audio.audio_cleanup import AudioCleanup
 from pei.models.pei_event import PEIEvent
 from db.llamadas import LlamadasDB
-from streaming.zello_streamer import ZelloStreamer
+
+# ZelloStreamer se importa de forma lazy dentro de los metodos que lo necesitan
+# para evitar que sus dependencias opcionales (websockets, opuslib, numpy)
+# rompan la importacion del modulo en entornos sin esas librerias (p.ej. CI).
 
 # Importacion a nivel de modulo para que monkeypatch.setattr funcione en tests.
 # En produccion, app_state se inicializa en main.py antes de construir PEIDaemon.
@@ -19,6 +22,12 @@ except ImportError:  # pragma: no cover
 AFILIACION_CHECK_INTERVAL = 5
 STT_MAX_WORKERS = 1
 WATCHDOG_POLL_INTERVAL = 1  # segundos entre comprobaciones del hilo watchdog
+
+
+def _is_zello(streamer) -> bool:
+    """Comprueba si el streamer es una instancia de ZelloStreamer sin importar
+    el modulo a nivel de paquete (import lazy)."""
+    return type(streamer).__name__ == "ZelloStreamer"
 
 
 class PEIDaemon:
@@ -66,12 +75,6 @@ class PEIDaemon:
     # ------------------------------------------------------------------
 
     def _set_radio_connected(self, connected: bool):
-        """
-        Actualiza el estado de conexion en app_state y en el bot,
-        y notifica por email solo si el estado realmente cambia.
-        """
-        # Usamos la referencia a nivel de modulo para que monkeypatch la sustituya
-        # en tests sin necesidad de import tardio.
         global app_state
         if connected == app_state.radio_connected:
             return
@@ -233,14 +236,14 @@ class PEIDaemon:
             self._recording_start      = now
             self._recording_start_time = now
 
-        if isinstance(streamer, ZelloStreamer):
+        if _is_zello(streamer):
             streamer.call_start()
 
     def _handle_ptt_end(self, streamer=None):
         logger.info(f"PTT END -- Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
         calls_logger.info(f"PTT_END | grupo={self._current_grupo} | ssi={self._current_ssi}")
 
-        if isinstance(streamer, ZelloStreamer):
+        if _is_zello(streamer):
             streamer.call_end()
 
         self._recording_start_time = None
@@ -259,7 +262,7 @@ class PEIDaemon:
         logger.info(f"CALL START -- Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
         calls_logger.info(f"CALL_START | grupo={self._current_grupo} | ssi={self._current_ssi}")
 
-        if isinstance(streamer, ZelloStreamer):
+        if _is_zello(streamer):
             label = self._grupo_label(self._current_grupo)
             texto = f"[TETRA] Grupo: {label} | SSI: {self._current_ssi}"
             streamer.send_text_message(texto)
@@ -320,11 +323,11 @@ class PEIDaemon:
                 if event:
                     self._handle_event(event, streamer)
 
-                if streamer and not isinstance(streamer, ZelloStreamer):
+                if streamer and not _is_zello(streamer):
                     chunk = self.audio_buffer.get_chunk()
                     if chunk is not None:
                         streamer.send_audio(chunk)
-                elif isinstance(streamer, ZelloStreamer) and streamer._in_call:
+                elif _is_zello(streamer) and streamer._in_call:
                     chunk = self.audio_buffer.get_chunk()
                     if chunk is not None:
                         streamer.send_audio(chunk)
