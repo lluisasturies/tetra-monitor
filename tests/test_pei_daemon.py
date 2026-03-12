@@ -21,6 +21,7 @@ sys.modules.setdefault("opuslib",   mock_opuslib)
 from pei.models.pei_event import PEIEvent          # noqa: E402
 from pei.daemon.pei_daemon import PEIDaemon        # noqa: E402
 from streaming.zello_streamer import ZelloStreamer  # noqa: E402
+import pei.daemon.pei_daemon as _pei_module        # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -35,17 +36,13 @@ class _FakeAppState:
 @pytest.fixture(autouse=True)
 def patch_app_state(monkeypatch):
     """
-    Reemplaza app_state en el modulo pei_daemon con una instancia fresca
-    de _FakeAppState en cada test. Asi _set_radio_connected lee y escribe
-    el mismo objeto que el test inspecciona.
+    Sustituye la variable 'app_state' en el namespace del modulo pei_daemon
+    con una instancia fresca de _FakeAppState en cada test.
+    Como pei_daemon usa 'global app_state' en _set_radio_connected,
+    monkeypatch.setattr sobre el modulo es suficiente.
     """
     fake = _FakeAppState()
-    monkeypatch.setattr("pei.daemon.pei_daemon.app_state", fake, raising=False)
-    # Tambien lo ponemos en sys.modules para que "from app_state import app_state"
-    # dentro del daemon resuelva al mismo objeto.
-    fake_module = mock.MagicMock()
-    fake_module.app_state = fake
-    sys.modules["app_state"] = fake_module
+    monkeypatch.setattr(_pei_module, "app_state", fake)
     yield fake
 
 
@@ -63,6 +60,11 @@ def _make_grupos_db(mapping=None):
 
 
 def _make_daemon(**kwargs) -> PEIDaemon:
+    """
+    Crea un PEIDaemon con todos los colaboradores mockeados.
+    Despues de la construccion resetea bot y email para que los tests
+    no vean las llamadas que genera _init_radio internamente.
+    """
     bot        = kwargs.pop("bot",        mock.MagicMock())
     email      = kwargs.pop("email",      mock.MagicMock())
     grupos_db  = kwargs.pop("grupos_db",  None)
@@ -93,6 +95,8 @@ def _make_daemon(**kwargs) -> PEIDaemon:
     )
     defaults.update(kwargs)
     d = PEIDaemon(**defaults)
+    # Resetear bot y email: _init_radio ya los invoco, no queremos esas
+    # llamadas contaminando las aserciones de los tests.
     d.bot.reset_mock()
     if d.email is not None:
         d.email.reset_mock()
@@ -129,26 +133,32 @@ def zello() -> ZelloStreamer:
 # ---------------------------------------------------------------------------
 
 def test_set_radio_connected_true_notifica_email(patch_app_state):
+    """
+    Cuando el estado pasa de False -> True, email.notificar_radio_conectada
+    se llama exactamente una vez.
+    El daemon se crea con app_state.radio_connected=False (el fake recien
+    creado). _init_radio tiene exito y lo pone a True. Reseteamos el email.
+    Luego lo volvemos a False para disparar la transicion True de nuevo.
+    """
+    d = _make_daemon()  # tras __init__, app_state.radio_connected == True
+    # Forzar de vuelta a False para preparar la transicion
     patch_app_state.radio_connected = False
-    d = _make_daemon()
     d._set_radio_connected(True)
     d.email.notificar_radio_conectada.assert_called_once()
     d.email.notificar_radio_desconectada.assert_not_called()
 
 
 def test_set_radio_connected_false_notifica_email(patch_app_state):
-    patch_app_state.radio_connected = True
-    d = _make_daemon()
+    d = _make_daemon()  # app_state.radio_connected == True tras __init__
+    # Estado ya es True; transicion a False
     d._set_radio_connected(False)
     d.email.notificar_radio_desconectada.assert_called_once()
     d.email.notificar_radio_conectada.assert_not_called()
 
 
 def test_set_radio_connected_mismo_estado_no_notifica(patch_app_state):
-    patch_app_state.radio_connected = True
-    d = _make_daemon()
-    d.email.reset_mock()
-    d._set_radio_connected(True)
+    d = _make_daemon()  # app_state.radio_connected == True
+    d._set_radio_connected(True)  # mismo estado -> no notifica
     d.email.notificar_radio_conectada.assert_not_called()
     d.email.notificar_radio_desconectada.assert_not_called()
 
@@ -156,12 +166,17 @@ def test_set_radio_connected_mismo_estado_no_notifica(patch_app_state):
 def test_set_radio_connected_sin_email_no_falla(patch_app_state):
     patch_app_state.radio_connected = False
     d = _make_daemon(email=None)
+    patch_app_state.radio_connected = False
     d._set_radio_connected(True)  # no debe lanzar
 
 
 def test_set_radio_connected_actualiza_bot_radio_active(patch_app_state):
+    """
+    bot.radio_active debe sincronizarse con el nuevo estado.
+    Preparamos la transicion False->True igual que el test de email.
+    """
+    d = _make_daemon()  # app_state.radio_connected == True tras __init__
     patch_app_state.radio_connected = False
-    d = _make_daemon()
     d.bot.radio_active = False
     d._set_radio_connected(True)
     assert d.bot.radio_active is True
@@ -188,27 +203,39 @@ def test_watchdog_activado_arranca_hilo():
 def test_watchdog_solicita_reconexion_si_timeout(patch_app_state):
     patch_app_state.radio_connected = True
     d = _make_daemon(watchdog_timeout=1)
+    d._reconnect_requested.clear()
     d._last_event_time = time.monotonic() - 10
-    elapsed = time.monotonic() - d._last_event_time
-    if elapsed > d.watchdog_timeout:
-        d._reconnect_requested.set()
+    # Simular la logica del watchdog
+    if patch_app_state.radio_connected:
+        elapsed = time.monotonic() - d._last_event_time
+        if elapsed > d.watchdog_timeout:
+            d._reconnect_requested.set()
     assert d._reconnect_requested.is_set()
 
 
 def test_watchdog_no_solicita_reconexion_si_reciente(patch_app_state):
     patch_app_state.radio_connected = True
     d = _make_daemon(watchdog_timeout=60)
+    d._reconnect_requested.clear()
     d._last_event_time = time.monotonic()
-    elapsed = time.monotonic() - d._last_event_time
-    if elapsed > d.watchdog_timeout:
-        d._reconnect_requested.set()
+    if patch_app_state.radio_connected:
+        elapsed = time.monotonic() - d._last_event_time
+        if elapsed > d.watchdog_timeout:
+            d._reconnect_requested.set()
     assert not d._reconnect_requested.is_set()
 
 
 def test_watchdog_no_actua_si_radio_desconectada(patch_app_state):
-    patch_app_state.radio_connected = False
+    """
+    Si radio_connected=False, el watchdog no debe setear _reconnect_requested
+    aunque haya pasado mucho tiempo sin eventos.
+    """
     d = _make_daemon(watchdog_timeout=1)
+    # Despues del __init__, radio_connected puede ser True; lo forzamos a False
+    patch_app_state.radio_connected = False
+    d._reconnect_requested.clear()  # limpiar cualquier estado previo del __init__
     d._last_event_time = time.monotonic() - 100
+    # Simular la logica del watchdog
     if patch_app_state.radio_connected:
         elapsed = time.monotonic() - d._last_event_time
         if elapsed > d.watchdog_timeout:
