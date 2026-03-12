@@ -2,17 +2,46 @@ import os
 import sys
 import pytest
 import unittest.mock as mock
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # Mocks de dependencias de hardware antes de importar la app
-sys.modules.setdefault("serial", mock.MagicMock())
+sys.modules.setdefault("serial",      mock.MagicMock())
 sys.modules.setdefault("sounddevice", mock.MagicMock())
-sys.modules.setdefault("soundfile", mock.MagicMock())
-sys.modules.setdefault("whisper", mock.MagicMock())
+sys.modules.setdefault("soundfile",   mock.MagicMock())
+sys.modules.setdefault("whisper",     mock.MagicMock())
 
 from fastapi.testclient import TestClient  # noqa: E402
-from app_state import app_state  # noqa: E402
+from app_state import app_state            # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_usuarios_mock(username="admin", password="testpass", rol="admin"):
+    """
+    Devuelve un mock de UsuariosDB que autentica al usuario indicado.
+    crear_refresh_token devuelve un token fijo para facilitar los tests.
+    consumir_refresh_token devuelve None (token invalido por defecto).
+    """
+    import bcrypt
+    pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    usuario = {
+        "id": 1, "username": username, "email": None,
+        "rol": rol, "activo": True,
+        "created_at": datetime.now(timezone.utc), "last_login": None,
+        "password_hash": pw_hash,
+    }
+    m = mock.MagicMock()
+    m.obtener_por_username.side_effect = (
+        lambda u: usuario if u == username else None
+    )
+    m.obtener_por_id.return_value = {k: v for k, v in usuario.items() if k != "password_hash"}
+    m.crear_refresh_token.return_value = "refresh-token-fijo"
+    m.consumir_refresh_token.return_value = None
+    return m
 
 
 # ---------------------------------------------------------------------------
@@ -21,10 +50,11 @@ from app_state import app_state  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def reset_app_state():
-    """Limpia app_state entre tests para evitar contaminación."""
+    """Limpia app_state entre tests para evitar contaminacion."""
     app_state.pool             = None
     app_state.llamadas         = None
     app_state.grupos           = None
+    app_state.usuarios         = None
     app_state.afiliacion       = None
     app_state.bot              = None
     app_state.radio_connected  = False
@@ -36,17 +66,33 @@ def reset_app_state():
 
 @pytest.fixture
 def client(monkeypatch):
-    """Cliente de test con variables de entorno mínimas y app_state mockeado."""
+    """Cliente de test con app_state.usuarios mockeado."""
     monkeypatch.setenv("JWT_SECRET", "test-secret-key-suficientemente-larga")
     monkeypatch.setenv("API_USER", "admin")
-    # Hash bcrypt de "testpass"
-    monkeypatch.setenv("API_PASSWORD_HASH", "$2b$12$KIXsP3OVzvBKMtSdW9na5.kX4nFn2KsGBPDwZ6HUMVf7yXlV/uyTa")
-
-    # Evitar que _init_standalone intente conectar a BD real
+    monkeypatch.setenv("API_PASSWORD_HASH", "$2b$12$dummy")
     monkeypatch.setattr("api.api._init_standalone", lambda: None)
 
     from api.api import app
+    app_state.usuarios = _make_usuarios_mock()
     return TestClient(app, raise_server_exceptions=True)
+
+
+def _client_with_token(monkeypatch, password="testpass"):
+    """Devuelve (TestClient, token) con usuarios mockeado y login correcto."""
+    import importlib
+    import api.api as api_module
+
+    monkeypatch.setenv("JWT_SECRET", "test-secret-key-suficientemente-larga")
+    monkeypatch.setenv("API_USER", "admin")
+    monkeypatch.setenv("API_PASSWORD_HASH", "$2b$12$dummy")
+    monkeypatch.setattr("api.api._init_standalone", lambda: None)
+
+    importlib.reload(api_module)
+    app_state.usuarios = _make_usuarios_mock(password=password)
+
+    c = TestClient(api_module.app, raise_server_exceptions=True)
+    token = c.post("/auth/token", data={"username": "admin", "password": password}).json()["access_token"]
+    return c, token
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +100,6 @@ def client(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_health_degraded_sin_subsistemas(client):
-    """Sin BD ni PEI inicializados: status degraded y HTTP 503."""
     resp = client.get("/health")
     assert resp.status_code == 503
     data = resp.json()
@@ -66,7 +111,6 @@ def test_health_degraded_sin_subsistemas(client):
 
 
 def test_health_ok_con_subsistemas_activos(client):
-    """Con BD, PEI y radio mockeados: status ok y HTTP 200."""
     app_state.pool            = mock.MagicMock()
     app_state.afiliacion      = mock.MagicMock()
     app_state.radio_connected = True
@@ -80,10 +124,8 @@ def test_health_ok_con_subsistemas_activos(client):
 
 
 def test_health_degraded_si_radio_desconectada(client):
-    """Con BD y PEI activos pero radio desconectada: status degraded y HTTP 503."""
     app_state.pool       = mock.MagicMock()
     app_state.afiliacion = mock.MagicMock()
-    # radio_connected = False (por defecto del fixture)
     resp = client.get("/health")
     assert resp.status_code == 503
     data = resp.json()
@@ -92,21 +134,26 @@ def test_health_degraded_si_radio_desconectada(client):
 
 
 def test_health_streaming_activo(client):
-    """El campo streaming refleja app_state.streaming_active."""
     app_state.pool             = mock.MagicMock()
     app_state.afiliacion       = mock.MagicMock()
     app_state.radio_connected  = True
     app_state.streaming_active = True
     resp = client.get("/health")
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["streaming"] is True
-    assert data["status"] == "ok"  # streaming no afecta a status
+    assert resp.json()["streaming"] is True
 
 
 # ---------------------------------------------------------------------------
 # /auth/token
 # ---------------------------------------------------------------------------
+
+def test_login_correcto(client):
+    resp = client.post("/auth/token", data={"username": "admin", "password": "testpass"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
+
 
 def test_login_credenciales_incorrectas(client):
     resp = client.post("/auth/token", data={"username": "admin", "password": "wrongpass"})
@@ -138,48 +185,22 @@ def test_groups_sin_token(client):
 
 
 # ---------------------------------------------------------------------------
-# /calls — con BD mockeada
+# /calls
 # ---------------------------------------------------------------------------
 
-def test_calls_servicio_no_disponible(client, monkeypatch):
-    """Sin BD inicializada debe devolver 503."""
-    import bcrypt
-    hashed = bcrypt.hashpw(b"testpass", bcrypt.gensalt()).decode()
-    monkeypatch.setenv("API_PASSWORD_HASH", hashed)
-
-    import importlib
-    import api.api as api_module
-    importlib.reload(api_module)
-    monkeypatch.setattr("api.api._init_standalone", lambda: None)
-
-    from fastapi.testclient import TestClient
-    c = TestClient(api_module.app)
-    token_resp = c.post("/auth/token", data={"username": "admin", "password": "testpass"})
-    token = token_resp.json()["access_token"]
-
+def test_calls_servicio_no_disponible(monkeypatch):
+    """Con BD (llamadas) a None debe devolver 503."""
+    c, token = _client_with_token(monkeypatch)
+    app_state.llamadas = None
     resp = c.get("/calls", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 503
 
 
-def test_calls_con_bd_mockeada(client, monkeypatch):
-    """Con BD mockeada debe devolver resultados correctamente."""
-    import bcrypt
-    hashed = bcrypt.hashpw(b"testpass", bcrypt.gensalt()).decode()
-    monkeypatch.setenv("API_PASSWORD_HASH", hashed)
-
-    import importlib
-    import api.api as api_module
-    importlib.reload(api_module)
-    monkeypatch.setattr("api.api._init_standalone", lambda: None)
-
-    from fastapi.testclient import TestClient
-    c = TestClient(api_module.app)
-    token = c.post("/auth/token", data={"username": "admin", "password": "testpass"}).json()["access_token"]
-
+def test_calls_con_bd_mockeada(monkeypatch):
+    c, token = _client_with_token(monkeypatch)
     llamadas_mock = mock.MagicMock()
     llamadas_mock.listar_filtrado.return_value = ([], 0)
     app_state.llamadas = llamadas_mock
-
     resp = c.get("/calls", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
     data = resp.json()
@@ -188,28 +209,15 @@ def test_calls_con_bd_mockeada(client, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# /afiliacion — con afiliacion mockeada
+# /afiliacion
 # ---------------------------------------------------------------------------
 
-def test_afiliacion_con_estado_mockeado(client, monkeypatch):
-    import bcrypt
-    hashed = bcrypt.hashpw(b"testpass", bcrypt.gensalt()).decode()
-    monkeypatch.setenv("API_PASSWORD_HASH", hashed)
-
-    import importlib
-    import api.api as api_module
-    importlib.reload(api_module)
-    monkeypatch.setattr("api.api._init_standalone", lambda: None)
-
-    from fastapi.testclient import TestClient
-    c = TestClient(api_module.app)
-    token = c.post("/auth/token", data={"username": "admin", "password": "testpass"}).json()["access_token"]
-
+def test_afiliacion_con_estado_mockeado(monkeypatch):
+    c, token = _client_with_token(monkeypatch)
     afiliacion_mock = mock.MagicMock()
     afiliacion_mock.gssi = "36001"
     afiliacion_mock.scan_list = "ListaScan1"
     app_state.afiliacion = afiliacion_mock
-
     resp = c.get("/afiliacion", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
     data = resp.json()
@@ -222,11 +230,22 @@ def test_afiliacion_con_estado_mockeado(client, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_refresh_token_invalido(client):
+    # consumir_refresh_token devuelve None por defecto en el mock
     resp = client.post("/auth/refresh", json={"refresh_token": "token-falso"})
     assert resp.status_code == 401
 
 
-def test_logout_token_invalido_no_falla(client):
-    """Logout con token inválido debe devolver 200 (idempotente)."""
-    resp = client.post("/auth/logout", json={"refresh_token": "token-inexistente"})
+def test_logout_con_token_valido(client):
+    token_resp = client.post("/auth/token", data={"username": "admin", "password": "testpass"})
+    access = token_resp.json()["access_token"]
+    resp = client.post(
+        "/auth/logout",
+        json={"refresh_token": "token-inexistente"},
+        headers={"Authorization": f"Bearer {access}"},
+    )
     assert resp.status_code == 200
+
+
+def test_logout_sin_token_devuelve_401(client):
+    resp = client.post("/auth/logout", json={"refresh_token": "token-inexistente"})
+    assert resp.status_code == 401

@@ -5,6 +5,7 @@ import yaml
 import bcrypt
 import importlib
 import unittest.mock as mock
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -13,9 +14,29 @@ sys.modules.setdefault("sounddevice", mock.MagicMock())
 sys.modules.setdefault("soundfile",   mock.MagicMock())
 sys.modules.setdefault("whisper",     mock.MagicMock())
 
-from fastapi.testclient import TestClient       # noqa: E402
-from app_state import app_state                # noqa: E402
-from filters.keyword_filter import KeywordFilter  # noqa: E402
+from fastapi.testclient import TestClient          # noqa: E402
+from app_state import app_state                    # noqa: E402
+from filters.keyword_filter import KeywordFilter   # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
+def _make_usuarios_mock(username="admin", password="testpass", rol="admin"):
+    pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    usuario = {
+        "id": 1, "username": username, "email": None,
+        "rol": rol, "activo": True,
+        "created_at": datetime.now(timezone.utc), "last_login": None,
+        "password_hash": pw_hash,
+    }
+    m = mock.MagicMock()
+    m.obtener_por_username.side_effect = (
+        lambda u: usuario if u == username else None
+    )
+    m.crear_refresh_token.return_value = "refresh-token-fijo"
+    return m
 
 
 # ---------------------------------------------------------------------------
@@ -34,6 +55,7 @@ def reset_app_state():
     app_state.pool             = None
     app_state.llamadas         = None
     app_state.grupos           = None
+    app_state.usuarios         = None
     app_state.afiliacion       = None
     app_state.bot              = None
     app_state.keyword_filter   = None
@@ -47,19 +69,19 @@ def reset_app_state():
 @pytest.fixture
 def api_client(monkeypatch, keywords_file):
     """Cliente de API con keyword_filter inicializado y token listo."""
-    hashed = bcrypt.hashpw(b"testpass", bcrypt.gensalt()).decode()
     monkeypatch.setenv("JWT_SECRET", "test-secret-key-suficientemente-larga")
     monkeypatch.setenv("API_USER", "admin")
-    monkeypatch.setenv("API_PASSWORD_HASH", hashed)
+    monkeypatch.setenv("API_PASSWORD_HASH", "$2b$12$dummy")
     monkeypatch.setattr("api.api._init_standalone", lambda: None)
 
     import api.api as api_module
     importlib.reload(api_module)
 
+    app_state.usuarios       = _make_usuarios_mock()
     app_state.keyword_filter = KeywordFilter(str(keywords_file))
 
     client = TestClient(api_module.app, raise_server_exceptions=True)
-    token = client.post("/auth/token", data={"username": "admin", "password": "testpass"}).json()["access_token"]
+    token  = client.post("/auth/token", data={"username": "admin", "password": "testpass"}).json()["access_token"]
     return client, token
 
 
@@ -170,17 +192,18 @@ def test_delete_keyword_inexistente_devuelve_404(api_client):
 
 
 def test_keywords_sin_filtro_devuelve_503(monkeypatch):
-    hashed = bcrypt.hashpw(b"testpass", bcrypt.gensalt()).decode()
     monkeypatch.setenv("JWT_SECRET", "test-secret-key-suficientemente-larga")
     monkeypatch.setenv("API_USER", "admin")
-    monkeypatch.setenv("API_PASSWORD_HASH", hashed)
+    monkeypatch.setenv("API_PASSWORD_HASH", "$2b$12$dummy")
     monkeypatch.setattr("api.api._init_standalone", lambda: None)
 
     import api.api as api_module
     importlib.reload(api_module)
 
+    app_state.usuarios       = _make_usuarios_mock()
     app_state.keyword_filter = None
+
     client = TestClient(api_module.app)
-    token = client.post("/auth/token", data={"username": "admin", "password": "testpass"}).json()["access_token"]
-    resp = client.get("/keywords", headers={"Authorization": f"Bearer {token}"})
+    token  = client.post("/auth/token", data={"username": "admin", "password": "testpass"}).json()["access_token"]
+    resp   = client.get("/keywords", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 503
