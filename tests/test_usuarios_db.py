@@ -32,7 +32,6 @@ def _make_conn(cur=None):
     if cur is None:
         cur = _make_cur()
     conn = mock.MagicMock()
-    # El context manager del cursor siempre devuelve `cur`
     cm = mock.MagicMock()
     cm.__enter__ = mock.MagicMock(return_value=cur)
     cm.__exit__  = mock.MagicMock(return_value=False)
@@ -225,21 +224,16 @@ def test_seed_admin_no_inserta_si_hay_usuarios():
 
 
 def test_seed_admin_inserta_si_tabla_vacia():
-    # Necesitamos dos conexiones: una para el SELECT COUNT y otra para el INSERT
-    cur_count  = _make_cur()
-    cur_count.fetchone.return_value = (0,)
-    cur_insert = _make_cur()
-
-    conn_count  = _make_conn(cur_count)
-    conn_insert = _make_conn(cur_insert)
-
-    pool = mock.MagicMock()
-    pool.getconn.side_effect = [conn_count, conn_insert]
-
-    db = UsuariosDB(pool)
+    """
+    seed_admin_desde_env usa UNA sola conexion para el COUNT y el INSERT.
+    fetchone devuelve (0,) la primera llamada (COUNT=0) y None las siguientes.
+    Verificamos que el INSERT se ejecuto sobre el mismo cursor.
+    """
+    cur = _make_cur()
+    cur.fetchone.return_value = (0,)  # tabla vacia
+    db = UsuariosDB(_make_pool(_make_conn(cur)))
     db.seed_admin_desde_env("admin", "$2b$12$hash")
-
-    insert_calls = [c for c in cur_insert.execute.call_args_list if "INSERT" in str(c)]
+    insert_calls = [c for c in cur.execute.call_args_list if "INSERT" in str(c)]
     assert len(insert_calls) == 1
 
 
