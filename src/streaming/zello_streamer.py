@@ -3,7 +3,6 @@ import threading
 import json
 import struct
 import time
-import os
 from core.logger import logger
 
 try:
@@ -118,7 +117,7 @@ class ZelloStreamer:
             # Los mensajes binarios son audio entrante de otros usuarios (ignorado)
 
     # ------------------------------------------------------------------
-    # API publica — llamada desde el hilo principal via call_start/end
+    # API publica - llamada desde el hilo principal via call_start/end
     # ------------------------------------------------------------------
 
     def call_start(self):
@@ -139,7 +138,7 @@ class ZelloStreamer:
         """Cierra el stream PTT. Llamar cuando llega PTT_END de TETRA."""
         if not self._in_call:
             return
-        # Vacia el buffer con silencio si quedan muestras incompletas
+        # Vacia el buffer si quedan muestras incompletas
         if self._buf:
             self._flush_buffer()
         future = asyncio.run_coroutine_threadsafe(self._stop_stream(), self._loop)
