@@ -13,16 +13,20 @@ if TYPE_CHECKING:
 
 class AppState:
     """Contenedor de dependencias compartidas entre main.py y la API."""
-    pool: DBPool | None = None
-    llamadas: LlamadasDB | None = None
-    grupos: GruposDB | None = None
-    bot: TelegramBot | None = None
-    email: EmailNotifier | None = None
-    afiliacion: AfiliacionConfig | None = None
-    keyword_filter: KeywordFilter | None = None
-    refresh_tokens: set[str] = set()  # tokens válidos en memoria
-    radio_connected: bool = False     # True si el PEI tiene conexión activa con la radio
-    streaming_active: bool = False    # True si el streamer está corriendo
+
+    def __init__(self):
+        self.pool: DBPool | None = None
+        self.llamadas: LlamadasDB | None = None
+        self.grupos: GruposDB | None = None
+        self.bot: TelegramBot | None = None
+        self.email: EmailNotifier | None = None
+        self.afiliacion: AfiliacionConfig | None = None
+        self.keyword_filter: KeywordFilter | None = None
+        # FIX: refresh_tokens como atributo de instancia para evitar que
+        # multiples instancias de AppState compartan el mismo set.
+        self.refresh_tokens: set[str] = set()
+        self.radio_connected: bool = False
+        self.streaming_active: bool = False
 
 
 app_state = AppState()

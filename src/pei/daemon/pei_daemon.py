@@ -49,9 +49,9 @@ class PEIDaemon:
         self._cleanup               = AudioCleanup(audio_output_dir, retention_days)
 
         # Watchdog en hilo dedicado
-        self._stop_event         = threading.Event()
+        self._stop_event          = threading.Event()
         self._reconnect_requested = threading.Event()
-        self._watchdog_thread    = None
+        self._watchdog_thread     = None
 
         self._init_radio()
 
@@ -61,13 +61,17 @@ class PEIDaemon:
 
     def _set_radio_connected(self, connected: bool):
         """
-        Actualiza el estado de conexion de la radio y notifica por email
-        solo si el estado cambia. Evita spam de alertas.
+        Actualiza el estado de conexion de la radio en app_state y en el bot,
+        y notifica por email solo si el estado cambia. Evita spam de alertas.
         """
         from app_state import app_state
         if connected == app_state.radio_connected:
             return
         app_state.radio_connected = connected
+        # FIX: sincronizar tambien bot.radio_active para que TelegramBot
+        # no bloquee las alertas de llamada cuando la radio esta conectada.
+        if self.bot is not None:
+            self.bot.radio_active = connected
         if self.email:
             if connected:
                 self.email.notificar_radio_conectada()
@@ -113,7 +117,7 @@ class PEIDaemon:
     def _check_recording_timeout(self):
         """
         Si max_recording_seconds > 0 y hay una grabacion activa que supera
-        ese limite, la descarta via _abort_recording().
+        ese limite, la detiene y encola STT.
         Llamar desde el bucle principal.
         """
         if self.max_recording_seconds <= 0 or self._recording_start_time is None:

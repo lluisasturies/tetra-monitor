@@ -32,8 +32,15 @@ class DBPool:
     def getconn(self):
         try:
             return self.pool.getconn()
-        except Exception:
-            logger.warning("Pool no disponible, reconectando...")
+        except Exception as e:
+            # FIX: cerrar el pool agotado antes de reconectar para evitar
+            # leak de conexiones si getconn() falla por pool exhausto.
+            logger.warning(f"Pool no disponible ({e}), reconectando...")
+            try:
+                if self.pool:
+                    self.pool.closeall()
+            except Exception:
+                pass
             self._connect()
             return self.pool.getconn()
 

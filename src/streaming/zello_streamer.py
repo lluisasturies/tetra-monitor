@@ -60,16 +60,15 @@ class ZelloStreamer:
         self.samplerate = samplerate
         self.channels   = channels
 
-        self.running      = False
-        self._ws          = None
-        self._stream_id   = None
-        self._packet_id   = 0
-        self._in_call     = False
-        self._audio_queue = asyncio.Queue()
-        self._loop        = asyncio.new_event_loop()
-        self._encoder     = opuslib.Encoder(OPUS_SAMPLE_RATE, OPUS_CHANNELS, opuslib.APPLICATION_VOIP)
+        self.running    = False
+        self._ws        = None
+        self._stream_id = None
+        self._packet_id = 0
+        self._in_call   = False
+        self._loop      = asyncio.new_event_loop()
+        self._encoder   = opuslib.Encoder(OPUS_SAMPLE_RATE, OPUS_CHANNELS, opuslib.APPLICATION_VOIP)
         self._encoder.bitrate = OPUS_BITRATE
-        self._buf         = b""   # buffer de muestras PCM pendientes
+        self._buf       = b""   # buffer de muestras PCM pendientes
 
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
@@ -115,13 +114,13 @@ class ZelloStreamer:
         logger.info(f"[Zello] Autenticado en canal '{self.channel}'")
 
     async def _listen(self):
-        """Recibe mensajes del servidor y procesa la cola de audio."""
+        """Recibe mensajes del servidor. Los mensajes binarios son audio entrante (ignorado)."""
+        # FIX: eliminada _audio_queue que nunca se usaba y acumulaba memoria.
         async for message in self._ws:
             if isinstance(message, str):
                 data = json.loads(message)
                 if data.get("command") == "on_stream_start":
                     logger.debug(f"[Zello] Stream entrante: {data}")
-            # Los mensajes binarios son audio entrante de otros usuarios (ignorado)
 
     # ------------------------------------------------------------------
     # API publica

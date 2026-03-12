@@ -36,6 +36,7 @@ class LlamadasDB:
             logger.error(f"Error guardando llamada: {e}")
             return False
         finally:
+            conn.autocommit = True
             self.pool.putconn(conn)
 
     def listar(self, limit: int = 100) -> list:
@@ -52,6 +53,9 @@ class LlamadasDB:
             logger.error(f"Error listando llamadas: {e}")
             return []
         finally:
+            # FIX: rollback antes de devolver la conexion al pool para
+            # que no quede en estado sucio si hubo un error en la query.
+            conn.rollback()
             self.pool.putconn(conn)
 
     def listar_filtrado(
@@ -63,9 +67,9 @@ class LlamadasDB:
         texto: str | None = None,
     ) -> tuple[list, int]:
         """
-        Listado con paginación y filtros opcionales.
-        Devuelve (filas, total) donde total es el número de resultados sin paginar.
-        La query se compone con psycopg2.sql para evitar cualquier interpolación directa.
+        Listado con paginacion y filtros opcionales.
+        Devuelve (filas, total) donde total es el numero de resultados sin paginar.
+        La query se compone con psycopg2.sql para evitar cualquier interpolacion directa.
         """
         clauses: list[sql.Composable] = []
         params: list = []
@@ -102,6 +106,7 @@ class LlamadasDB:
             logger.error(f"Error en listar_filtrado: {e}")
             return [], 0
         finally:
+            conn.rollback()
             self.pool.putconn(conn)
 
     def obtener(self, llamada_id: int) -> dict | None:
@@ -118,4 +123,5 @@ class LlamadasDB:
             logger.error(f"Error obteniendo llamada {llamada_id}: {e}")
             return None
         finally:
+            conn.rollback()
             self.pool.putconn(conn)

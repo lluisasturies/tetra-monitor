@@ -178,8 +178,10 @@ def _init_audio(cfg: dict, audio_output_dir: str) -> tuple[AudioBuffer, STTProce
 def _init_pei(
     cfg: dict, audio_buffer: AudioBuffer, stt: STTProcessor, kf: KeywordFilter,
     llamadas_db: LlamadasDB, afiliacion: AfiliacionConfig, bot: TelegramBot,
-    email: EmailNotifier, audio_output_dir: str,
+    email: EmailNotifier, grupos_db: GruposDB, audio_output_dir: str,
 ) -> PEIDaemon:
+    # FIX: grupos_db se pasa explicitamente para que _grupo_label
+    # pueda resolver nombres desde la BD en produccion.
     features = cfg.get("features", {})
     return PEIDaemon(
         motorola_pei_cls=MotorolaPEI,
@@ -190,6 +192,7 @@ def _init_pei(
         afiliacion=afiliacion,
         bot=bot,
         email=email,
+        grupos_db=grupos_db,
         port=cfg["pei"].get("port", ""),
         baudrate=cfg["pei"]["baudrate"],
         audio_output_dir=audio_output_dir,
@@ -247,7 +250,8 @@ def main():
     afiliacion.set_bot(bot)
     audio_buffer, stt, kf        = _init_audio(cfg, audio_output_dir)
     pei_daemon                   = _init_pei(
-        cfg, audio_buffer, stt, kf, llamadas_db, afiliacion, bot, email, audio_output_dir
+        cfg, audio_buffer, stt, kf, llamadas_db, afiliacion, bot, email,
+        grupos_db, audio_output_dir
     )
 
     streaming_enabled  = features.get("streaming_enabled", False)

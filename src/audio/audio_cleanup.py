@@ -2,8 +2,9 @@ import os
 import time
 from core.logger import logger
 
-# Cada cuántos segundos se ejecuta la limpieza
+# Cada cuantos segundos se ejecuta la limpieza
 CLEANUP_INTERVAL = 3600  # 1 hora
+
 
 class AudioCleanup:
     def __init__(self, output_dir: str, retention_days: int):
@@ -11,12 +12,12 @@ class AudioCleanup:
         self.retention_seconds = retention_days * 86400
         self._last_cleanup = 0.0
         logger.info(
-            f"[AudioCleanup] Retención configurada a {retention_days} días "
-            f"— limpieza cada {CLEANUP_INTERVAL // 3600}h"
+            f"[AudioCleanup] Retencion configurada a {retention_days} dias "
+            f"-- limpieza cada {CLEANUP_INTERVAL // 3600}h"
         )
 
     def run_if_due(self):
-        """Llamar desde el bucle principal — solo ejecuta si ha pasado CLEANUP_INTERVAL."""
+        """Llamar desde el bucle principal -- solo ejecuta si ha pasado CLEANUP_INTERVAL."""
         now = time.monotonic()
         if now - self._last_cleanup < CLEANUP_INTERVAL:
             return
@@ -46,6 +47,6 @@ class AudioCleanup:
                 errors += 1
 
         if deleted or errors:
-            logger.info(f"[AudioCleanup] Limpieza completada — eliminados: {deleted}, errores: {errors}")
+            logger.info(f"[AudioCleanup] Limpieza completada -- eliminados: {deleted}, errores: {errors}")
         else:
-            logger.debug("[AudioCleanup] Limpieza completada — ningún fichero expirado")
+            logger.debug("[AudioCleanup] Limpieza completada -- ningun fichero expirado")
