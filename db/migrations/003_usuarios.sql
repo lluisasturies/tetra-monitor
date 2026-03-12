@@ -1,15 +1,17 @@
 -- Migracion 003: sistema de usuarios con roles y refresh tokens persistentes
--- Ejecutar: psql -U <user> -d <dbname> -f db/migrations/003_usuarios.sql
+--
+-- NOTA: Si partes de una instalacion limpia, ejecuta data/db/schema.sql
+-- directamente — ya incluye estas tablas.
+--
+-- Este script solo es necesario para actualizar instalaciones existentes
+-- que ya tienen el schema previo (grupos, carpetas, scan_lists, llamadas)
+-- y necesitan anadir las nuevas tablas de autenticacion.
+--
+-- Ejecutar:
+--   psql -U <db_user> -d tetra -f db/migrations/003_usuarios.sql
 
 BEGIN;
 
--- -------------------------------------------------------------------------
--- Tabla de usuarios
--- Roles disponibles:
---   admin    -> acceso total: lectura + escritura + gestion de usuarios
---   operator -> puede modificar afiliacion, keywords y grupos
---   viewer   -> solo lectura (llamadas, grupos, estado, health)
--- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS usuarios (
     id            SERIAL       PRIMARY KEY,
     username      VARCHAR(64)  UNIQUE NOT NULL,
@@ -22,13 +24,10 @@ CREATE TABLE IF NOT EXISTS usuarios (
     last_login    TIMESTAMPTZ
 );
 
-COMMENT ON TABLE  usuarios              IS 'Usuarios de la API REST';
-COMMENT ON COLUMN usuarios.rol          IS 'admin | operator | viewer';
+COMMENT ON TABLE  usuarios               IS 'Usuarios de la API REST';
+COMMENT ON COLUMN usuarios.rol           IS 'admin | operator | viewer';
 COMMENT ON COLUMN usuarios.password_hash IS 'Hash bcrypt de la contrasena';
 
--- -------------------------------------------------------------------------
--- Tabla de refresh tokens (persistentes, sobreviven reinicios del proceso)
--- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS refresh_tokens (
     id          SERIAL       PRIMARY KEY,
     usuario_id  INTEGER      NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
