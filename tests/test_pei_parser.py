@@ -152,7 +152,8 @@ def test_set_active_gssi_demasiado_largo(pei):
 def test_set_scan_list_formato_valido(pei):
     pei.send = mock.MagicMock(return_value="OK")
     pei.set_scan_list("ListaScan1")
-    pei.send.assert_called_once_with("AT+CGSSI=ListaScan1")
+    # AT+CTSL: comando ETSI EN 300 392-5 para activar una scan list por nombre
+    pei.send.assert_called_once_with("AT+CTSL=ListaScan1")
 
 
 def test_set_scan_list_formato_invalido(pei):
