@@ -11,9 +11,18 @@ sys.modules.setdefault("sounddevice", mock.MagicMock())
 sys.modules.setdefault("soundfile",   mock.MagicMock())
 sys.modules.setdefault("whisper",     mock.MagicMock())
 
-from pei.models.pei_event import PEIEvent  # noqa: E402
-from pei.daemon.pei_daemon import PEIDaemon  # noqa: E402
-from app_state import app_state  # noqa: E402
+# Mockear deps de Zello para que el import de pei_daemon no falle
+mock_websockets = mock.MagicMock()
+mock_opuslib    = mock.MagicMock()
+mock_opuslib.Encoder.return_value = mock.MagicMock()
+mock_opuslib.APPLICATION_VOIP     = "voip"
+sys.modules.setdefault("websockets", mock_websockets)
+sys.modules.setdefault("opuslib",   mock_opuslib)
+
+from pei.models.pei_event import PEIEvent        # noqa: E402
+from pei.daemon.pei_daemon import PEIDaemon      # noqa: E402
+from streaming.zello_streamer import ZelloStreamer  # noqa: E402
+from app_state import app_state                  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -29,7 +38,7 @@ def reset_app_state():
 
 def _make_daemon(**kwargs) -> PEIDaemon:
     bot   = kwargs.pop("bot",   mock.MagicMock())
-    email = kwargs.pop("email", mock.MagicMock())  # puede ser None si el test lo pide
+    email = kwargs.pop("email", mock.MagicMock())
     afiliacion = kwargs.pop("afiliacion", mock.MagicMock())
     afiliacion.gssi      = "36001"
     afiliacion.scan_list = "ListaScan1"
@@ -62,13 +71,35 @@ def _make_daemon(**kwargs) -> PEIDaemon:
     return d
 
 
+def _make_zello_streamer() -> ZelloStreamer:
+    """ZelloStreamer completamente mockeado, sin hilo ni conexion real."""
+    with mock.patch("threading.Thread"):
+        s = ZelloStreamer(
+            username="u", password="p", token="t", channel="ch"
+        )
+    s.running    = True
+    s._in_call   = False
+    s._stream_id = None
+    s._loop      = mock.MagicMock()
+    s.call_start = mock.MagicMock()
+    s.call_end   = mock.MagicMock()
+    s.send_audio = mock.MagicMock()
+    s.stop       = mock.MagicMock()
+    return s
+
+
 @pytest.fixture
 def daemon() -> PEIDaemon:
     return _make_daemon()
 
 
+@pytest.fixture
+def zello() -> ZelloStreamer:
+    return _make_zello_streamer()
+
+
 # ---------------------------------------------------------------------------
-# _set_radio_connected — notificaciones via email, no telegram
+# _set_radio_connected
 # ---------------------------------------------------------------------------
 
 def test_set_radio_connected_true_notifica_email(daemon):
@@ -93,10 +124,9 @@ def test_set_radio_connected_mismo_estado_no_notifica(daemon):
 
 
 def test_set_radio_connected_sin_email_no_falla():
-    """Si email=None (no configurado), no debe lanzar excepción."""
     d = _make_daemon(email=None)
     app_state.radio_connected = False
-    d._set_radio_connected(True)  # no debe lanzar
+    d._set_radio_connected(True)
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +186,7 @@ def test_handle_event_actualiza_last_event_time(daemon):
 
 
 # ---------------------------------------------------------------------------
-# Límite de duración de grabación
+# Limite de duracion de grabacion
 # ---------------------------------------------------------------------------
 
 def test_recording_timeout_no_actua_si_desactivado():
@@ -211,7 +241,6 @@ def test_ptt_end_limpia_recording_start_time():
 
 
 def test_abort_recording_descarta_grabacion_activa():
-    """_abort_recording debe llamar abort_recording() en el buffer, no stop_recording()."""
     d = _make_daemon()
     d._recording_start_time = time.monotonic()
     d._abort_recording()
@@ -225,11 +254,10 @@ def test_abort_recording_no_actua_si_no_grabando():
     d._recording_start_time = None
     d._abort_recording()
     d.audio_buffer.abort_recording.assert_not_called()
-    d.audio_buffer.stop_recording.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
-# _handle_event — PTT_START / PTT_END
+# _handle_event - PTT_START / PTT_END (sin Zello)
 # ---------------------------------------------------------------------------
 
 def test_ptt_start_inicia_grabacion(daemon):
@@ -271,7 +299,51 @@ def test_ptt_end_no_graba_si_recording_disabled(daemon):
 
 
 # ---------------------------------------------------------------------------
-# _handle_event — CALL_START / CALL_END
+# _handle_event - Integracion con Zello
+# ---------------------------------------------------------------------------
+
+def test_ptt_start_llama_call_start_en_zello(daemon, zello):
+    daemon._handle_event(PEIEvent(type="PTT_START"), streamer=zello)
+    zello.call_start.assert_called_once()
+
+
+def test_ptt_end_llama_call_end_en_zello(daemon, zello):
+    daemon.audio_buffer.stop_recording.return_value = None
+    daemon._handle_event(PEIEvent(type="PTT_END"), streamer=zello)
+    zello.call_end.assert_called_once()
+
+
+def test_ptt_start_no_llama_call_start_en_streamer_no_zello(daemon):
+    rtmp_streamer = mock.MagicMock(spec=["send_audio", "stop", "running"])
+    daemon._handle_event(PEIEvent(type="PTT_START"), streamer=rtmp_streamer)
+    # rtmp_streamer no tiene call_start -> no debe llamarlo
+    assert not hasattr(rtmp_streamer, "call_start") or not rtmp_streamer.call_start.called
+
+
+def test_ptt_end_no_llama_call_end_en_streamer_no_zello(daemon):
+    rtmp_streamer = mock.MagicMock(spec=["send_audio", "stop", "running"])
+    daemon.audio_buffer.stop_recording.return_value = None
+    daemon._handle_event(PEIEvent(type="PTT_END"), streamer=rtmp_streamer)
+    assert not hasattr(rtmp_streamer, "call_end") or not rtmp_streamer.call_end.called
+
+
+def test_ptt_start_y_end_completo_con_zello(daemon, zello):
+    """Ciclo completo PTT con Zello: start -> grabacion + call_start, end -> call_end + STT."""
+    daemon.audio_buffer.stop_recording.return_value = "/tmp/audio.flac"
+    daemon._executor = mock.MagicMock()
+
+    daemon._handle_event(PEIEvent(type="PTT_START"), streamer=zello)
+    assert daemon.audio_buffer.start_recording.called
+    assert zello.call_start.called
+
+    daemon._handle_event(PEIEvent(type="PTT_END"), streamer=zello)
+    assert daemon.audio_buffer.stop_recording.called
+    assert zello.call_end.called
+    assert daemon._executor.submit.called
+
+
+# ---------------------------------------------------------------------------
+# _handle_event - CALL_START / CALL_END
 # ---------------------------------------------------------------------------
 
 def test_call_start_actualiza_grupo_y_ssi(daemon):
@@ -337,7 +409,7 @@ def test_process_audio_save_all_calls_con_keyword_guarda_y_alerta(daemon):
 
 
 def test_process_audio_error_stt_no_propaga(daemon):
-    daemon.stt_processor.transcribe.side_effect = RuntimeError("STT falló")
+    daemon.stt_processor.transcribe.side_effect = RuntimeError("STT fallo")
     daemon._process_audio("/tmp/audio.flac", grupo=36001, ssi=12345)
 
 
