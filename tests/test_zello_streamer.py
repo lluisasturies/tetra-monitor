@@ -42,8 +42,6 @@ def streamer():
         s.running    = True
         s._ws        = mock.MagicMock()
         s._loop      = mock.MagicMock()
-        # FIX: aseguramos que el encoder del streamer sea exactamente
-        # mock_encoder_instance para que los tests puedan inspeccionarlo.
         s._encoder   = mock_encoder_instance
         mock_future          = mock.MagicMock()
         mock_future.result.return_value = 42
@@ -133,7 +131,6 @@ def _pcm16(n_samples: int, value: int = 0) -> bytes:
 
 
 def test_send_audio_no_actua_si_no_en_llamada(streamer):
-    """send_audio retorna antes de tocar el buffer si _in_call=False."""
     mock_encoder_instance.encode.reset_mock()
     streamer._in_call = False
     with mock.patch.object(streamer, "_flush_buffer") as mock_flush:
@@ -153,7 +150,6 @@ def test_send_audio_no_actua_si_no_running(streamer):
 
 
 def test_flush_buffer_codifica_frame_completo(streamer):
-    """_flush_buffer con exactamente un frame completo codifica una vez."""
     mock_encoder_instance.encode.reset_mock()
     streamer._in_call   = True
     streamer._stream_id = 1
@@ -165,10 +161,9 @@ def test_flush_buffer_codifica_frame_completo(streamer):
 
 
 def test_flush_buffer_acumula_si_frame_incompleto(streamer):
-    """_flush_buffer con menos de un frame no debe codificar."""
     mock_encoder_instance.encode.reset_mock()
     streamer._in_call = True
-    streamer._buf = _pcm16(100)  # menos de OPUS_FRAME_SIZE muestras
+    streamer._buf = _pcm16(100)
     with mock.patch("asyncio.run_coroutine_threadsafe"):
         streamer._flush_buffer()
     mock_encoder_instance.encode.assert_not_called()
@@ -176,7 +171,6 @@ def test_flush_buffer_acumula_si_frame_incompleto(streamer):
 
 
 def test_flush_buffer_codifica_multiples_frames(streamer):
-    """_flush_buffer con 3 frames codifica exactamente 3 veces."""
     mock_encoder_instance.encode.reset_mock()
     streamer._in_call   = True
     streamer._stream_id = 1
@@ -223,24 +217,25 @@ def test_stop_no_falla_sin_llamada_activa(streamer):
 # ---------------------------------------------------------------------------
 
 def test_create_streamer_zello_prioridad_sobre_rtmp():
-    with mock.patch.dict(os.environ, {
-        "ZELLO_USERNAME": "u",
-        "ZELLO_PASSWORD": "p",
-        "ZELLO_TOKEN":    "t",
-        "ZELLO_CHANNEL":  "ch",
-    }):
-        with mock.patch("threading.Thread"):
-            with mock.patch("streaming.zello_streamer._ZELLO_DEPS_AVAILABLE", True):
-                from streaming import create_streamer
-                cfg = {
-                    "zello":       {"enabled": True, "channel": "ch"},
-                    "rtmp_url":    "rtmp://localhost/live/tetra",
-                    "icecast_url": "icecast://localhost:8000/tetra",
-                    "samplerate":  16000,
-                    "channels":    1,
-                }
-                s = create_streamer(cfg)
-                assert isinstance(s, ZelloStreamer)
+    """Con zello habilitado y credenciales en el YAML, se crea ZelloStreamer."""
+    with mock.patch("threading.Thread"):
+        with mock.patch("streaming.zello_streamer._ZELLO_DEPS_AVAILABLE", True):
+            from streaming import create_streamer
+            cfg = {
+                "zello": {
+                    "enabled":  True,
+                    "username": "u",
+                    "password": "p",
+                    "token":    "t",
+                    "channel":  "ch",
+                },
+                "rtmp_url":    "rtmp://localhost/live/tetra",
+                "icecast_url": "icecast://localhost:8000/tetra",
+                "samplerate":  16000,
+                "channels":    1,
+            }
+            s = create_streamer(cfg)
+            assert isinstance(s, ZelloStreamer)
 
 
 def test_create_streamer_zello_desactivado_usa_rtmp():
@@ -260,17 +255,18 @@ def test_create_streamer_zello_desactivado_usa_rtmp():
 
 
 def test_create_streamer_zello_sin_credenciales_devuelve_none():
-    with mock.patch.dict(os.environ, {
-        "ZELLO_USERNAME": "",
-        "ZELLO_PASSWORD": "",
-        "ZELLO_TOKEN":    "",
-        "ZELLO_CHANNEL":  "",
-    }):
-        from streaming import create_streamer
-        cfg = {
-            "zello":      {"enabled": True, "channel": ""},
-            "samplerate": 16000,
-            "channels":   1,
-        }
-        result = create_streamer(cfg)
-        assert result is None
+    """Si faltan credenciales en el YAML, create_streamer devuelve None."""
+    from streaming import create_streamer
+    cfg = {
+        "zello": {
+            "enabled":  True,
+            "username": "",
+            "password": "",
+            "token":    "",
+            "channel":  "",
+        },
+        "samplerate": 16000,
+        "channels":   1,
+    }
+    result = create_streamer(cfg)
+    assert result is None

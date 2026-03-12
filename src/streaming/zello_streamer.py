@@ -43,6 +43,8 @@ class ZelloStreamer:
 
     IMPORTANTE: Este streamer requiere credenciales de desarrollador Zello.
     Consulta https://github.com/zelloptt/zello-channel-api para obtenerlas.
+    Las credenciales se configuran en config.yaml bajo streaming.zello:
+      username, password, token, channel
     """
 
     def __init__(self, username: str, password: str, token: str, channel: str,
@@ -68,7 +70,7 @@ class ZelloStreamer:
         self._loop      = asyncio.new_event_loop()
         self._encoder   = opuslib.Encoder(OPUS_SAMPLE_RATE, OPUS_CHANNELS, opuslib.APPLICATION_VOIP)
         self._encoder.bitrate = OPUS_BITRATE
-        self._buf       = b""   # buffer de muestras PCM pendientes
+        self._buf       = b""
 
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
@@ -115,7 +117,6 @@ class ZelloStreamer:
 
     async def _listen(self):
         """Recibe mensajes del servidor. Los mensajes binarios son audio entrante (ignorado)."""
-        # FIX: eliminada _audio_queue que nunca se usaba y acumulaba memoria.
         async for message in self._ws:
             if isinstance(message, str):
                 data = json.loads(message)
@@ -130,7 +131,6 @@ class ZelloStreamer:
         """
         Envia un mensaje de texto al canal Zello.
         Llamar en CALL_START para informar a los oyentes del grupo y SSI activos.
-        No requiere stream de audio abierto.
         """
         if not self.running:
             logger.debug("[Zello] send_text_message ignorado: sin conexion")
@@ -183,7 +183,7 @@ class ZelloStreamer:
 
     def _flush_buffer(self):
         """Codifica y envia todos los frames completos disponibles en el buffer."""
-        frame_bytes = OPUS_FRAME_SIZE * 2  # 2 bytes por muestra PCM16
+        frame_bytes = OPUS_FRAME_SIZE * 2
         while len(self._buf) >= frame_bytes:
             frame = self._buf[:frame_bytes]
             self._buf = self._buf[frame_bytes:]
@@ -197,11 +197,6 @@ class ZelloStreamer:
     # ------------------------------------------------------------------
 
     async def _send_text(self, text: str):
-        """
-        Envia un mensaje de texto al canal Zello.
-        Protocolo: comando JSON send_text_message.
-        Ver: https://github.com/zelloptt/zello-channel-api
-        """
         if not self._ws:
             return
         try:
@@ -215,10 +210,6 @@ class ZelloStreamer:
             logger.error(f"[Zello] Error enviando mensaje de texto: {e}")
 
     async def _start_stream(self) -> int:
-        """
-        Envia start_stream y devuelve el stream_id asignado por el servidor.
-        Ver: https://github.com/zelloptt/zello-channel-api#startstream
-        """
         cmd = {
             "command": "start_stream",
             "seq": 2,
@@ -240,13 +231,6 @@ class ZelloStreamer:
         await self._ws.send(json.dumps(cmd))
 
     async def _send_audio_packet(self, opus_data: bytes):
-        """
-        Formato del paquete binario Zello:
-          1 byte  tipo (0x01 = audio)
-          4 bytes stream_id (big-endian)
-          4 bytes packet_id (big-endian)
-          N bytes datos Opus
-        """
         if self._stream_id is None or not self.running:
             return
         header = struct.pack(">BII", 0x01, self._stream_id, self._packet_id)
@@ -257,10 +241,6 @@ class ZelloStreamer:
             logger.error(f"[Zello] Error enviando paquete de audio: {e}")
 
     def _build_codec_header(self) -> str:
-        """
-        Cabecera Opus codificada en base64 segun el protocolo Zello.
-        Formato: sample_rate(2) + frames_per_packet(1) + frame_size_ms(1)
-        """
         import base64
         header = struct.pack(">HBB", OPUS_SAMPLE_RATE, 1, OPUS_FRAME_MS)
         return base64.b64encode(header).decode()

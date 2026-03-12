@@ -58,11 +58,14 @@ streaming:
   bitrate: "128k"   # Usado por RTMP e Icecast (no aplica a Zello)
 
   # --- Opcion 1: Zello (PTT-aware) ---
-  # Requiere credenciales de desarrollador: https://github.com/zelloptt/zello-channel-api
-  # Las credenciales van en .env (ZELLO_USERNAME, ZELLO_PASSWORD, ZELLO_TOKEN, ZELLO_CHANNEL)
+  # Requiere credenciales de desarrollador Zello:
+  # https://github.com/zelloptt/zello-channel-api
   zello:
     enabled: false
-    channel: "mi-canal-tetra"   # Nombre del canal Zello (puede sobreescribirse con ZELLO_CHANNEL en .env)
+    username: "mi-usuario-zello"
+    password: "mi-password-zello"
+    token: "mi-token-de-desarrollador"
+    channel: "mi-canal-tetra"
 
   # --- Opcion 2: RTMP (streaming continuo) ---
   # rtmp_url: "rtmp://localhost/live/tetra"
