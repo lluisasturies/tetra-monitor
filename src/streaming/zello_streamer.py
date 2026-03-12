@@ -28,9 +28,16 @@ class ZelloStreamer:
     Streamer para Zello via WebSocket.
 
     A diferencia de RTMP/Icecast (audio continuo), Zello es PTT:
-    - call_start()  -> abre un stream de voz en el canal
-    - send_audio()  -> envia chunks de audio codificados en Opus
-    - call_end()    -> cierra el stream
+    - send_text_message(text) -> envia un mensaje de texto al canal
+    - call_start()            -> abre un stream de voz en el canal
+    - send_audio(audio)       -> envia chunks de audio codificados en Opus
+    - call_end()              -> cierra el stream
+
+    Flujo tipico con TETRA:
+      CALL_START -> send_text_message('[TETRA] Grupo: ... | SSI: ...')
+      PTT_START  -> call_start()
+      <audio>    -> send_audio(chunk)
+      PTT_END    -> call_end()
 
     El bucle asyncio corre en un hilo dedicado para no bloquear el daemon PEI.
 
@@ -117,8 +124,22 @@ class ZelloStreamer:
             # Los mensajes binarios son audio entrante de otros usuarios (ignorado)
 
     # ------------------------------------------------------------------
-    # API publica - llamada desde el hilo principal via call_start/end
+    # API publica
     # ------------------------------------------------------------------
+
+    def send_text_message(self, text: str):
+        """
+        Envia un mensaje de texto al canal Zello.
+        Llamar en CALL_START para informar a los oyentes del grupo y SSI activos.
+        No requiere stream de audio abierto.
+        """
+        if not self.running:
+            logger.debug("[Zello] send_text_message ignorado: sin conexion")
+            return
+        asyncio.run_coroutine_threadsafe(
+            self._send_text(text), self._loop
+        )
+        logger.debug(f"[Zello] Mensaje de texto encolado: {text}")
 
     def call_start(self):
         """Abre un stream PTT en Zello. Llamar cuando llega PTT_START de TETRA."""
@@ -138,7 +159,6 @@ class ZelloStreamer:
         """Cierra el stream PTT. Llamar cuando llega PTT_END de TETRA."""
         if not self._in_call:
             return
-        # Vacia el buffer si quedan muestras incompletas
         if self._buf:
             self._flush_buffer()
         future = asyncio.run_coroutine_threadsafe(self._stop_stream(), self._loop)
@@ -157,7 +177,6 @@ class ZelloStreamer:
         """
         if not self._in_call or not self.running:
             return
-        # Convertir float32 -> PCM16
         import numpy as np
         pcm16 = (audio * 32767).clip(-32768, 32767).astype(np.int16).tobytes()
         self._buf += pcm16
@@ -177,6 +196,24 @@ class ZelloStreamer:
     # ------------------------------------------------------------------
     # Corrutinas internas
     # ------------------------------------------------------------------
+
+    async def _send_text(self, text: str):
+        """
+        Envia un mensaje de texto al canal Zello.
+        Protocolo: comando JSON send_text_message.
+        Ver: https://github.com/zelloptt/zello-channel-api
+        """
+        if not self._ws:
+            return
+        try:
+            cmd = {
+                "command": "send_text_message",
+                "seq": int(time.time()),
+                "text": text,
+            }
+            await self._ws.send(json.dumps(cmd))
+        except Exception as e:
+            logger.error(f"[Zello] Error enviando mensaje de texto: {e}")
 
     async def _start_stream(self) -> int:
         """

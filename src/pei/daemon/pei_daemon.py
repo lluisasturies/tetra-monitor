@@ -15,6 +15,7 @@ STT_MAX_WORKERS = 1
 class PEIDaemon:
     def __init__(self, motorola_pei_cls, audio_buffer, stt_processor, keyword_filter,
                  llamadas_db: LlamadasDB, afiliacion: AfiliacionConfig, bot, email=None,
+                 grupos_db=None,
                  port="", baudrate=9600, audio_output_dir="", retention_days=7,
                  recording_enabled=True, processing_enabled=True, save_all_calls=False,
                  watchdog_timeout=60, max_recording_seconds=120):
@@ -26,6 +27,7 @@ class PEIDaemon:
         self.afiliacion = afiliacion
         self.bot = bot
         self.email = email
+        self.grupos_db = grupos_db          # opcional: lookup de nombre de grupo
         self.port = port
         self.baudrate = baudrate
         self.recording_enabled = recording_enabled
@@ -42,6 +44,22 @@ class PEIDaemon:
         self._executor = ThreadPoolExecutor(max_workers=STT_MAX_WORKERS)
         self._cleanup = AudioCleanup(audio_output_dir, retention_days)
         self._init_radio()
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _grupo_label(self, gssi: int) -> str:
+        """
+        Devuelve 'Nombre (GSSI)' si el grupo esta en BD,
+        o solo 'GSSI' si no se encuentra o no hay grupos_db.
+        """
+        if self.grupos_db:
+            nombre = self.grupos_db.get_nombre(gssi)
+            # get_nombre devuelve str(gssi) si no existe
+            if nombre != str(gssi):
+                return f"{nombre} ({gssi})"
+        return str(gssi)
 
     def _apply_afiliacion(self):
         logger.info(
@@ -148,7 +166,6 @@ class PEIDaemon:
         else:
             logger.debug("[PEI] PTT START ignorado -- grabacion desactivada")
 
-        # Zello: abrir stream PTT en el canal
         if isinstance(streamer, ZelloStreamer):
             streamer.call_start()
 
@@ -156,7 +173,6 @@ class PEIDaemon:
         logger.info(f"PTT END -- Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
         calls_logger.info(f"PTT_END | grupo={self._current_grupo} | ssi={self._current_ssi}")
 
-        # Zello: cerrar stream PTT en el canal
         if isinstance(streamer, ZelloStreamer):
             streamer.call_end()
 
@@ -170,6 +186,18 @@ class PEIDaemon:
                 logger.debug(f"Transcripcion encolada para {path}")
         else:
             logger.debug("[PEI] PTT END ignorado -- grabacion desactivada")
+
+    def _handle_call_start(self, evento: PEIEvent, streamer=None):
+        self._current_grupo = evento.grupo
+        self._current_ssi   = evento.ssi
+        logger.info(f"CALL START -- Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
+        calls_logger.info(f"CALL_START | grupo={self._current_grupo} | ssi={self._current_ssi}")
+
+        if isinstance(streamer, ZelloStreamer):
+            label = self._grupo_label(self._current_grupo)
+            texto = f"[TETRA] Grupo: {label} | SSI: {self._current_ssi}"
+            streamer.send_text_message(texto)
+            logger.debug(f"[Zello] Mensaje de canal enviado: {texto}")
 
     def _handle_event(self, event: PEIEvent, streamer=None):
         if not self.processing_enabled:
@@ -185,10 +213,7 @@ class PEIDaemon:
             self._handle_ptt_end(streamer)
 
         elif event.type == "CALL_START":
-            self._current_grupo = event.grupo
-            self._current_ssi   = event.ssi
-            logger.info(f"CALL START -- Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
-            calls_logger.info(f"CALL_START | grupo={self._current_grupo} | ssi={self._current_ssi}")
+            self._handle_call_start(event, streamer)
 
         elif event.type == "CALL_CONNECTED":
             logger.info(f"CALL CONNECTED -- Grupo: {self._current_grupo}, SSI: {self._current_ssi}")
@@ -230,7 +255,6 @@ class PEIDaemon:
                 if event:
                     self._handle_event(event, streamer)
 
-                # Audio continuo para RTMP/Icecast (Zello no usa este path)
                 if streamer and not isinstance(streamer, ZelloStreamer):
                     chunk = self.audio_buffer.get_chunk()
                     if chunk is not None:

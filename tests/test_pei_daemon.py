@@ -11,7 +11,6 @@ sys.modules.setdefault("sounddevice", mock.MagicMock())
 sys.modules.setdefault("soundfile",   mock.MagicMock())
 sys.modules.setdefault("whisper",     mock.MagicMock())
 
-# Mockear deps de Zello para que el import de pei_daemon no falle
 mock_websockets = mock.MagicMock()
 mock_opuslib    = mock.MagicMock()
 mock_opuslib.Encoder.return_value = mock.MagicMock()
@@ -19,10 +18,10 @@ mock_opuslib.APPLICATION_VOIP     = "voip"
 sys.modules.setdefault("websockets", mock_websockets)
 sys.modules.setdefault("opuslib",   mock_opuslib)
 
-from pei.models.pei_event import PEIEvent        # noqa: E402
-from pei.daemon.pei_daemon import PEIDaemon      # noqa: E402
+from pei.models.pei_event import PEIEvent          # noqa: E402
+from pei.daemon.pei_daemon import PEIDaemon        # noqa: E402
 from streaming.zello_streamer import ZelloStreamer  # noqa: E402
-from app_state import app_state                  # noqa: E402
+from app_state import app_state                    # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -36,9 +35,20 @@ def reset_app_state():
     app_state.radio_connected = False
 
 
+def _make_grupos_db(mapping: dict | None = None):
+    """grupos_db mock con get_nombre configurable."""
+    db = mock.MagicMock()
+    if mapping:
+        db.get_nombre.side_effect = lambda gssi: mapping.get(gssi, str(gssi))
+    else:
+        db.get_nombre.side_effect = lambda gssi: str(gssi)
+    return db
+
+
 def _make_daemon(**kwargs) -> PEIDaemon:
-    bot   = kwargs.pop("bot",   mock.MagicMock())
-    email = kwargs.pop("email", mock.MagicMock())
+    bot        = kwargs.pop("bot",        mock.MagicMock())
+    email      = kwargs.pop("email",      mock.MagicMock())
+    grupos_db  = kwargs.pop("grupos_db",  None)
     afiliacion = kwargs.pop("afiliacion", mock.MagicMock())
     afiliacion.gssi      = "36001"
     afiliacion.scan_list = "ListaScan1"
@@ -53,6 +63,7 @@ def _make_daemon(**kwargs) -> PEIDaemon:
         afiliacion=afiliacion,
         bot=bot,
         email=email,
+        grupos_db=grupos_db,
         port="/dev/ttyUSB0",
         baudrate=9600,
         audio_output_dir="/tmp/audio_test",
@@ -72,19 +83,17 @@ def _make_daemon(**kwargs) -> PEIDaemon:
 
 
 def _make_zello_streamer() -> ZelloStreamer:
-    """ZelloStreamer completamente mockeado, sin hilo ni conexion real."""
     with mock.patch("threading.Thread"):
-        s = ZelloStreamer(
-            username="u", password="p", token="t", channel="ch"
-        )
-    s.running    = True
-    s._in_call   = False
-    s._stream_id = None
-    s._loop      = mock.MagicMock()
-    s.call_start = mock.MagicMock()
-    s.call_end   = mock.MagicMock()
-    s.send_audio = mock.MagicMock()
-    s.stop       = mock.MagicMock()
+        s = ZelloStreamer(username="u", password="p", token="t", channel="ch")
+    s.running         = True
+    s._in_call        = False
+    s._stream_id      = None
+    s._loop           = mock.MagicMock()
+    s.call_start      = mock.MagicMock()
+    s.call_end        = mock.MagicMock()
+    s.send_audio      = mock.MagicMock()
+    s.send_text_message = mock.MagicMock()
+    s.stop            = mock.MagicMock()
     return s
 
 
@@ -299,7 +308,7 @@ def test_ptt_end_no_graba_si_recording_disabled(daemon):
 
 
 # ---------------------------------------------------------------------------
-# _handle_event - Integracion con Zello
+# _handle_event - Integracion con Zello: PTT
 # ---------------------------------------------------------------------------
 
 def test_ptt_start_llama_call_start_en_zello(daemon, zello):
@@ -316,7 +325,6 @@ def test_ptt_end_llama_call_end_en_zello(daemon, zello):
 def test_ptt_start_no_llama_call_start_en_streamer_no_zello(daemon):
     rtmp_streamer = mock.MagicMock(spec=["send_audio", "stop", "running"])
     daemon._handle_event(PEIEvent(type="PTT_START"), streamer=rtmp_streamer)
-    # rtmp_streamer no tiene call_start -> no debe llamarlo
     assert not hasattr(rtmp_streamer, "call_start") or not rtmp_streamer.call_start.called
 
 
@@ -328,7 +336,6 @@ def test_ptt_end_no_llama_call_end_en_streamer_no_zello(daemon):
 
 
 def test_ptt_start_y_end_completo_con_zello(daemon, zello):
-    """Ciclo completo PTT con Zello: start -> grabacion + call_start, end -> call_end + STT."""
     daemon.audio_buffer.stop_recording.return_value = "/tmp/audio.flac"
     daemon._executor = mock.MagicMock()
 
@@ -340,6 +347,58 @@ def test_ptt_start_y_end_completo_con_zello(daemon, zello):
     assert daemon.audio_buffer.stop_recording.called
     assert zello.call_end.called
     assert daemon._executor.submit.called
+
+
+# ---------------------------------------------------------------------------
+# _handle_call_start - mensaje de texto a Zello
+# ---------------------------------------------------------------------------
+
+def test_call_start_envia_texto_a_zello_con_nombre_grupo(zello):
+    """Si el grupo esta en BD, el mensaje incluye el nombre y el GSSI."""
+    gdb = _make_grupos_db({36001: "Bomberos BCN"})
+    d = _make_daemon(grupos_db=gdb)
+    d._handle_event(PEIEvent(type="CALL_START", grupo=36001, ssi=12345), streamer=zello)
+    zello.send_text_message.assert_called_once()
+    msg = zello.send_text_message.call_args[0][0]
+    assert "Bomberos BCN" in msg
+    assert "36001" in msg
+    assert "12345" in msg
+
+
+def test_call_start_envia_solo_gssi_si_grupo_no_en_bd(zello):
+    """Si el grupo no esta en BD, el mensaje muestra solo el GSSI."""
+    gdb = _make_grupos_db()   # siempre devuelve str(gssi)
+    d = _make_daemon(grupos_db=gdb)
+    d._handle_event(PEIEvent(type="CALL_START", grupo=99999, ssi=777), streamer=zello)
+    zello.send_text_message.assert_called_once()
+    msg = zello.send_text_message.call_args[0][0]
+    assert "99999" in msg
+    assert "777" in msg
+    # No debe haber parentesis (no hay nombre)
+    assert "(" not in msg
+
+
+def test_call_start_envia_texto_sin_grupos_db(zello):
+    """Sin grupos_db, el mensaje muestra solo el GSSI."""
+    d = _make_daemon(grupos_db=None)
+    d._handle_event(PEIEvent(type="CALL_START", grupo=36001, ssi=12345), streamer=zello)
+    zello.send_text_message.assert_called_once()
+    msg = zello.send_text_message.call_args[0][0]
+    assert "36001" in msg
+
+
+def test_call_start_no_envia_texto_si_streamer_no_es_zello():
+    """Con RTMP/Icecast, no se llama send_text_message."""
+    rtmp = mock.MagicMock(spec=["send_audio", "stop", "running"])
+    d = _make_daemon()
+    d._handle_event(PEIEvent(type="CALL_START", grupo=36001, ssi=12345), streamer=rtmp)
+    assert not hasattr(rtmp, "send_text_message") or not rtmp.send_text_message.called
+
+
+def test_call_start_no_envia_texto_sin_streamer():
+    """Sin streamer, no debe fallar."""
+    d = _make_daemon()
+    d._handle_event(PEIEvent(type="CALL_START", grupo=36001, ssi=12345))
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +428,7 @@ def test_call_connected_no_modifica_estado(daemon):
 
 
 # ---------------------------------------------------------------------------
-# _process_audio
+# _proceso_audio
 # ---------------------------------------------------------------------------
 
 def test_process_audio_con_keyword_guarda_y_alerta(daemon):
