@@ -4,7 +4,7 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "tetra-monitor"
-version = "1.2.0"
+version = "0.1.0"
 description = "Sistema de monitorización de redes TETRA sobre Raspberry Pi"
 requires-python = ">=3.11"
 
