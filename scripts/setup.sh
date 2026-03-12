@@ -99,6 +99,7 @@ fi
 
 echo "Instalando dependencias desde requirements.txt..."
 pip install --upgrade pip --quiet
+pip install --upgrade setuptools wheel --quiet
 pip install -r "$REQUIREMENTS"
 echo "Dependencias instaladas correctamente"
 
