@@ -6,6 +6,10 @@ from core.logger import logger
 POOL_MIN_CONN = 1
 POOL_MAX_CONN = 5
 
+# Numero de reintentos con backoff antes de cerrar el pool y reconectar
+_GETCONN_RETRIES = 3
+_GETCONN_RETRY_DELAY = 0.5  # segundos
+
 
 class DBPool:
     def __init__(self, **kwargs):
@@ -21,7 +25,10 @@ class DBPool:
                     POOL_MAX_CONN,
                     **self.kwargs
                 )
-                logger.info(f"Pool de conexiones PostgreSQL iniciado (min={POOL_MIN_CONN}, max={POOL_MAX_CONN})")
+                logger.info(
+                    f"Pool de conexiones PostgreSQL iniciado "
+                    f"(min={POOL_MIN_CONN}, max={POOL_MAX_CONN})"
+                )
                 return
             except OperationalError:
                 wait = 2 ** i
@@ -30,19 +37,28 @@ class DBPool:
         raise RuntimeError("No se pudo conectar a PostgreSQL tras varios intentos")
 
     def getconn(self):
-        try:
-            return self.pool.getconn()
-        except Exception as e:
-            # FIX: cerrar el pool agotado antes de reconectar para evitar
-            # leak de conexiones si getconn() falla por pool exhausto.
-            logger.warning(f"Pool no disponible ({e}), reconectando...")
+        # Primer intento con backoff para absorber picos de carga
+        # (pool temporalmente exhausto) sin destruir conexiones activas.
+        for intento in range(_GETCONN_RETRIES):
             try:
-                if self.pool:
-                    self.pool.closeall()
-            except Exception:
-                pass
-            self._connect()
-            return self.pool.getconn()
+                return self.pool.getconn()
+            except Exception as e:
+                if intento < _GETCONN_RETRIES - 1:
+                    logger.warning(
+                        f"Pool ocupado (intento {intento + 1}/{_GETCONN_RETRIES}): {e} "
+                        f"-- reintentando en {_GETCONN_RETRY_DELAY}s"
+                    )
+                    time.sleep(_GETCONN_RETRY_DELAY)
+                else:
+                    # Ultimo recurso: cerrar y reconectar
+                    logger.warning(f"Pool no disponible tras {_GETCONN_RETRIES} intentos ({e}), reconectando...")
+                    try:
+                        if self.pool:
+                            self.pool.closeall()
+                    except Exception:
+                        pass
+                    self._connect()
+                    return self.pool.getconn()
 
     def putconn(self, conn):
         self.pool.putconn(conn)

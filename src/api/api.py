@@ -2,6 +2,7 @@ import os
 import bcrypt
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from importlib.metadata import version as pkg_version, PackageNotFoundError
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -17,6 +18,11 @@ load_dotenv()
 
 from core.logger import logger  # noqa: E402
 from app_state import app_state  # noqa: E402
+
+try:
+    _API_VERSION = pkg_version("tetra-monitor")
+except PackageNotFoundError:
+    _API_VERSION = "dev"
 
 JWT_SECRET        = os.getenv("JWT_SECRET")
 API_USER          = os.getenv("API_USER", "")
@@ -80,10 +86,10 @@ def _init_standalone():
     usuarios_db = UsuariosDB(pool)
     afiliacion  = AfiliacionConfig(AFILIACION_PATH)
 
-    app_state.pool      = pool
-    app_state.llamadas  = llamadas_db
-    app_state.grupos    = grupos_db
-    app_state.usuarios  = usuarios_db
+    app_state.pool       = pool
+    app_state.llamadas   = llamadas_db
+    app_state.grupos     = grupos_db
+    app_state.usuarios   = usuarios_db
     app_state.afiliacion = afiliacion
 
     grupos_db.seed_from_yaml(GRUPOS_PATH)
@@ -104,7 +110,7 @@ async def lifespan(app: FastAPI):
 # ------------------------------------------------------------------
 
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(title="TETRA Monitor API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="TETRA Monitor API", version=_API_VERSION, lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
@@ -323,14 +329,13 @@ def health(request: Request):
 @limiter.limit("5/minute")
 def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     """
-    Autenticacion: busca el usuario en BD (o fallback a .env si BD no disponible).
+    Autenticacion: busca el usuario en BD.
     """
     _require("usuarios", "Sistema de usuarios no disponible")
     usuario = app_state.usuarios.obtener_por_username(form_data.username)
 
-    # Comprobacion de credenciales -- tiempo constante para evitar user enumeration
+    # Comprobacion en tiempo constante para evitar user enumeration
     if usuario is None or not usuario.get("activo", False):
-        # Ejecutar bcrypt igualmente para no revelar si el usuario existe
         bcrypt.checkpw(b"dummy", bcrypt.hashpw(b"dummy", bcrypt.gensalt()))
         logger.warning(f"Login fallido para '{_safe_username(form_data.username)}'")
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
@@ -444,7 +449,11 @@ def actualizar_usuario(request: Request, usuario_id: int, body: UsuarioUpdate):
 
 @app.delete("/users/{usuario_id}", dependencies=[_admin_only])
 @limiter.limit("10/minute")
-def desactivar_usuario(request: Request, usuario_id: int, payload: dict = _any_user):
+def desactivar_usuario(request: Request, usuario_id: int, payload: dict = _admin_only):
+    """
+    Soft-delete: marca el usuario como inactivo y revoca todos sus tokens.
+    Un admin no puede desactivarse a si mismo.
+    """
     _require("usuarios")
     if usuario_id == payload["uid"]:
         raise HTTPException(status_code=400, detail="No puedes desactivar tu propio usuario")

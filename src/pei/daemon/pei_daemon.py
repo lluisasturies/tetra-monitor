@@ -75,7 +75,6 @@ class PEIDaemon:
     # ------------------------------------------------------------------
 
     def _set_radio_connected(self, connected: bool):
-        global app_state
         if connected == app_state.radio_connected:
             return
         app_state.radio_connected = connected
@@ -134,6 +133,7 @@ class PEIDaemon:
                 self._executor.submit(self._process_audio, path, grupo, ssi)
 
     def _abort_recording(self):
+        """Aborta la grabacion activa sin procesarla (sin STT)."""
         if self._recording_start_time is None:
             return
         self._recording_start_time = None
@@ -285,6 +285,8 @@ class PEIDaemon:
         elif event.type == "CALL_END":
             logger.info(f"CALL END -- Grupo: {self._current_grupo}")
             calls_logger.info(f"CALL_END | grupo={self._current_grupo} | ssi={self._current_ssi}")
+            # Abortar grabacion si hay una activa al terminar la llamada sin PTT_END
+            self._abort_recording()
             self._current_grupo = 0
             self._current_ssi   = 0
         elif event.type == "TX_DEMAND":
