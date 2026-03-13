@@ -14,7 +14,7 @@ CONFIG_FILES := \
 	config/afiliacion.yaml \
 	config/grupos.yaml
 
-.PHONY: help init setup setup-https set-password start stop restart logs logs-file \
+.PHONY: help init install setup setup-https set-password start stop restart logs logs-file \
         install-service uninstall-service update status reload-grupos backup-db \
         test lint
 
@@ -23,7 +23,7 @@ help:
 	@echo "  TETRA Monitor — comandos disponibles"
 	@echo ""
 	@echo "  make init               Copia todos los ficheros .example a su config local"
-	@echo "  make setup              Instala dependencias y prepara el entorno"
+	@echo "  make install            Instala/actualiza dependencias y prepara el entorno"
 	@echo "  make setup-https        Instala nginx con TLS (certificado autofirmado)"
 	@echo "  make set-password       Genera hash bcrypt y lo guarda en .env"
 	@echo "  make start              Arranca el monitor en primer plano"
@@ -34,7 +34,7 @@ help:
 	@echo "  make logs-file          Muestra los logs en tiempo real (fichero)"
 	@echo "  make install-service    Instala tetra-monitor como servicio systemd"
 	@echo "  make uninstall-service  Elimina el servicio systemd"
-	@echo "  make update             git pull + reinicia el servicio si esta activo"
+	@echo "  make update             git pull + reinstala dependencias + reinicia si activo"
 	@echo "  make reload-grupos      Recarga el catalogo desde config/grupos.yaml"
 	@echo "  make backup-db          Volcado de la BD en data/backups/"
 	@echo "  make test               Ejecuta todos los tests con pytest"
@@ -64,10 +64,13 @@ init:
 	fi
 	@echo ""
 	@echo "Listo. Edita los ficheros de config/ y .env con tus valores reales."
-	@echo "A continuacion ejecuta: make setup"
+	@echo "A continuacion ejecuta: make install"
 
-setup:
-	sudo bash scripts/setup.sh
+install:
+	sudo bash scripts/install.sh
+
+# Alias de compatibilidad para usuarios que vengan del README antiguo
+setup: install
 
 setup-https:
 	sudo bash scripts/setup_nginx.sh
@@ -112,6 +115,7 @@ uninstall-service:
 
 update:
 	git pull
+	$(MAKE) install
 	@sudo systemctl is-active --quiet $(SERVICE_NAME) && sudo systemctl restart $(SERVICE_NAME) && echo "Servicio reiniciado" || echo "Servicio no activo, omitiendo reinicio"
 
 reload-grupos:
