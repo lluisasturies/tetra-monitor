@@ -11,7 +11,7 @@ ENV_FILE="$PROJECT_ROOT/.env"
 REAL_USER="${SUDO_USER:-$USER}"
 
 echo "==============================="
-echo "  TETRA Monitor — Instalacion"
+echo "  TETRA Monitor - Instalacion"
 echo "==============================="
 
 # ---------------------------
@@ -24,7 +24,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # ---------------------------
-# Actualizar lista de paquetes (solo una vez, silencioso)
+# Actualizar lista de paquetes
 # ---------------------------
 echo "Actualizando lista de paquetes..."
 apt update -qq
@@ -56,7 +56,6 @@ if ! command -v psql &> /dev/null; then
     echo "  -> PostgreSQL instalado y arrancado"
 else
     echo "[OK] PostgreSQL $(psql --version | awk '{print $3}')"
-    # libpq-dev puede faltar aunque psql este instalado
     if ! dpkg -s libpq-dev &> /dev/null; then
         echo "[INSTALAR] libpq-dev..."
         apt install -y libpq-dev --no-install-recommends -qq
@@ -123,7 +122,6 @@ except Exception:
 ")
 fi
 
-# Comprobar si el modelo ya esta descargado (~/.cache/whisper)
 WHISPER_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/whisper"
 if [ -f "${WHISPER_CACHE}/${WHISPER_MODEL}.pt" ]; then
     echo "[OK] Modelo Whisper '$WHISPER_MODEL' ya descargado"
@@ -155,13 +153,13 @@ fi
 # ---------------------------
 if [ ! -f "$ENV_FILE" ]; then
     echo ""
-    echo "[AVISO] No se encontro .env — omitiendo configuracion de BD."
+    echo "[AVISO] No se encontro .env - omitiendo configuracion de BD."
     echo "        Copia .env.example a .env, rellena las credenciales y vuelve a ejecutar:"
     echo "        sudo bash scripts/install.sh"
 else
     set -a; source "$ENV_FILE"; set +a
 
-    # Crear usuario si no existe
+    # Crear usuario BD si no existe
     if sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
         echo "[OK] Usuario PostgreSQL '$DB_USER' existe"
     else
@@ -177,7 +175,7 @@ else
         sudo -u postgres psql -c "CREATE DATABASE tetra OWNER $DB_USER;"
     fi
 
-    # Aplicar schema (idempotente: usa IF NOT EXISTS en todas las tablas)
+    # Aplicar schema (idempotente: IF NOT EXISTS en todas las tablas)
     if [ ! -f "$SCHEMA" ]; then
         echo "ERROR: No se encontro schema.sql en $SCHEMA"
         exit 1
@@ -188,10 +186,80 @@ else
     sudo -u postgres psql -d tetra -f /tmp/tetra_schema.sql -q
     rm -f /tmp/tetra_schema.sql
     echo "[OK] Schema aplicado"
+
+    # ---------------------------
+    # Usuario admin de la API
+    # Solo se pregunta si API_USER no esta definido en .env (instalacion limpia).
+    # En actualizaciones se omite silenciosamente.
+    # ---------------------------
+    if [ -z "${API_USER:-}" ]; then
+        echo ""
+        echo "--- Configuracion del usuario admin de la API ---"
+        echo "Define el usuario y contrasena con los que accederas a la API."
+        echo ""
+
+        # Nombre de usuario
+        read -r -p "Nombre de usuario admin [admin]: " ADMIN_USER
+        ADMIN_USER="${ADMIN_USER:-admin}"
+
+        # Contrasena con confirmacion (oculta con read -s)
+        while true; do
+            read -r -s -p "Contrasena (min. 8 caracteres): " ADMIN_PASS
+            echo ""
+            if [ ${#ADMIN_PASS} -lt 8 ]; then
+                echo "  ERROR: La contrasena debe tener al menos 8 caracteres."
+                continue
+            fi
+            read -r -s -p "Confirma la contrasena: " ADMIN_PASS2
+            echo ""
+            if [ "$ADMIN_PASS" != "$ADMIN_PASS2" ]; then
+                echo "  ERROR: Las contrasenas no coinciden."
+                continue
+            fi
+            break
+        done
+
+        # Generar hash bcrypt con Python (bcrypt ya instalado en el venv)
+        ADMIN_HASH=$(python3 - "$ADMIN_PASS" << 'PYEOF'
+import bcrypt, sys
+pw = sys.argv[1].encode()
+if len(pw) > 72:
+    print('ERROR: La contrasena supera 72 bytes (limite bcrypt)', file=sys.stderr)
+    sys.exit(1)
+print(bcrypt.hashpw(pw, bcrypt.gensalt()).decode())
+PYEOF
+)
+
+        # Escribir API_USER y API_PASSWORD_HASH en .env
+        python3 - "$ADMIN_USER" "$ADMIN_HASH" "$ENV_FILE" << 'PYEOF'
+import re, sys
+from pathlib import Path
+
+user     = sys.argv[1]
+hashed   = sys.argv[2]
+env_path = Path(sys.argv[3])
+content  = env_path.read_text()
+
+def set_var(text, key, value):
+    line = f'{key}={value}'
+    if re.search(rf'^{key}=', text, re.MULTILINE):
+        return re.sub(rf'^{key}=.*$', line, text, flags=re.MULTILINE)
+    return text.rstrip('\n') + f'\n{line}\n'
+
+content = set_var(content, 'API_USER', user)
+content = set_var(content, 'API_PASSWORD_HASH', hashed)
+content = re.sub(r'\n{3,}', '\n\n', content)
+env_path.write_text(content)
+PYEOF
+
+        echo "[OK] Usuario admin '$ADMIN_USER' configurado en .env"
+    else
+        echo "[OK] Usuario admin ya configurado ('${API_USER}') - omitiendo"
+    fi
 fi
 
 # ---------------------------
-# HTTPS (solo en instalacion limpia, no en actualizaciones)
+# HTTPS (solo en instalacion limpia)
 # ---------------------------
 if ! command -v nginx &> /dev/null; then
     echo ""
@@ -202,7 +270,7 @@ if ! command -v nginx &> /dev/null; then
         echo "HTTPS omitido. Puedes instalarlo mas tarde con: make setup-https"
     fi
 else
-    echo "[OK] nginx ya instalado — omitiendo pregunta HTTPS"
+    echo "[OK] nginx ya instalado - omitiendo pregunta HTTPS"
 fi
 
 # ---------------------------
@@ -214,6 +282,6 @@ echo "  Instalacion completada"
 echo "==============================="
 echo ""
 echo "Pasos siguientes:"
-echo "  1. Si no lo has hecho: copia .env.example a .env y rellena tus credenciales"
+echo "  1. Revisa config/config.yaml y .env con tus valores reales"
 echo "  2. Arranca con:  make start   o   bash scripts/start.sh"
 echo ""
